@@ -1,5 +1,5 @@
-// It can be ran in data mode -> takes the width biases per 4D bin as input and fits for c,d per eta bin 
-// OR toys mode (closure test) -> generates width biases from dummy cd bias and fits for cd from them
+// It can be ran in data mode -> takes the mass width biases per 4D bin and fits for the pT resolution correction parameters c,d per eta bin 
+// OR toys mode (closure test) -> generates mass width biases from dummy cd biases and fits for cd from them
 // Authors: Cristina Alexe, Lorenzo Bianchini
 
 #include <ROOT/RDataFrame.hxx>

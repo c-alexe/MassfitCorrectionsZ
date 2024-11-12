@@ -1,6 +1,6 @@
 # Runs all the steps
 # Once for Iter0: ./massscales_data ./massfit ./resolfit
-# For niter times: ./massscales_data(command updated to use previous fit values) ./massfit ./resolfit 
+# For niter times: ./massscales_data (command updated to use results of the previous iteration) ./massfit ./resolfit 
 # Authors: Cristina Alexe, Lorenzo Bianchini
 
 import argparse

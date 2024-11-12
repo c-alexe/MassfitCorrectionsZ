@@ -1,5 +1,5 @@
-// Fits the Z mass in 4D bins (eta+, pt+, eta-, pt-) for data and MC extracting the scale and resolution biases.
-// It can be used iteratively with results from massfit.cpp and resolfit.cpp to update the MC to better match the data.
+// Fits the Z mass in 4D bins (muon eta+, pt+, eta-, pt-) for data and MC extracting the mass scale and resolution biases.
+// It can be used iteratively with massfit.cpp and resolfit.cpp to correct muon momenta in MC to get mass distributions closer to the data.
 // Authors: Cristina Alexe, Lorenzo Bianchini
 
 #include <ROOT/RDataFrame.hxx>
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
 	  ("tagPrevResolFit",    value<std::string>()->default_value("closure"), "run type, type of data used")
 	  ("runPrevResolFit",    value<std::string>()->default_value("closure"), "number of iteration")
 	  ("useKf",              bool_switch()->default_value(false), "use track input from Kalman Filter instead of CVH")
-	  ("useCB",              bool_switch()->default_value(false), "")
+	  ("useCB",              bool_switch()->default_value(false), "under development")
 	  ("scaleToData",        bool_switch()->default_value(false), "scale MC to data in 4D bin")
 	  ("y2016",              bool_switch()->default_value(false), "use 2016 data")
 	  ("y2017",              bool_switch()->default_value(false), "")
@@ -156,13 +156,15 @@ int main(int argc, char* argv[]) {
   
   unsigned int n_pt_bins  = pt_edges.size()-1;
   unsigned int n_eta_bins = eta_edges.size()-1;
-  int n_bins = n_pt_bins*n_pt_bins*n_eta_bins*n_eta_bins; // number of 4D bins
+  // Number of 4D bins in muon kinematics (eta+, pt+, eta-, pt-)
+  int n_bins = n_pt_bins*n_pt_bins*n_eta_bins*n_eta_bins; 
 
   // Bins in mass
   const int x_nbins   = 40;
   const double x_low  = 70.0;
   const double x_high = 110.0;
 
+  // Bins in mass - gen mass
   const int dm_bins    = 24;
   const double dm_low  = -6.0;
   const double dm_high = 6.0;
@@ -171,21 +173,21 @@ int main(int argc, char* argv[]) {
   TH1F* h_A_vals_nom = new TH1F("h_A_vals_nom", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_e_vals_nom = new TH1F("h_e_vals_nom", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_M_vals_nom = new TH1F("h_M_vals_nom", "", n_eta_bins, 0, n_eta_bins );
-  // _prevfit histograms for the sum of the pT corrections A, e or M from all the previous iterations 
+  // _prevfit histograms for the sum of the pT scale bias parameters A, e or M from all the previous iterations 
   TH1F* h_A_vals_prevfit = new TH1F("h_A_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_e_vals_prevfit = new TH1F("h_e_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_M_vals_prevfit = new TH1F("h_M_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_c_vals_prevfit = new TH1F("h_c_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_d_vals_prevfit = new TH1F("h_d_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   
-  float kmean_val = 0.5*( 1./pt_edges[0] + 1./pt_edges[ pt_edges.size()-1] );
+  // Store curvature (not pT) biases
   VectorXd A_vals_fit( n_eta_bins );
   VectorXd e_vals_fit( n_eta_bins );
   VectorXd M_vals_fit( n_eta_bins );
   VectorXd c_vals_fit( n_eta_bins );
   VectorXd d_vals_fit( n_eta_bins );
 
-  // Initialize A,e,M,(c,d) = 0, remains 0 if usePrevMassFit(usePrevResolFit) is false
+  // Initialize curvature bias parameters A,e,M,c,d = 0, they will remain 0 if usePrevMassFit/usePrevResolFit are false
   for(unsigned int i=0; i<n_eta_bins; i++) {
     h_A_vals_nom->SetBinContent(i+1, 0.0);
     h_e_vals_nom->SetBinContent(i+1, 0.0);
@@ -202,17 +204,23 @@ int main(int argc, char* argv[]) {
 	d_vals_fit(i) = 0.0;
   }           
   
+  // Keep track of MC before(reco) and after(smear0) applying curvature corrections to get closer to data
   std::vector<string> recos = {"reco", "smear0"};
 
+  // Map to histograms containing information for each 4D bin
   std::map<string, TH1D*> h_map;
   for(unsigned int r = 0; r<recos.size(); r++) {
+	// Gaussian mean and rms of the mass - gen mass distribution in a 4D bin
     h_map.insert( std::make_pair<string, TH1D* >("mean_"+recos[r], 0 ) );
     h_map.insert( std::make_pair<string, TH1D* >("rms_"+recos[r],  0 ) );
+	// 1/0 if keeping(ignoring) a 4D bin in the fit
     h_map.insert( std::make_pair<string, TH1D* >("mask_"+recos[r],  0 ) );
   }
 
+  // Map to 2D histograms for Crystal Ball jacobians
   std::map<string, TH2D*> h_jac_map;
   for(unsigned int r = 0; r<recos.size(); r++) {
+	// Crystal Ball jacobian event weights in a 4D bin, in a mass - gen mass bin
     h_jac_map.insert( std::make_pair<string, TH2D* >("jscale_cb_per_evt_"+recos[r], 0 ) );
     h_jac_map.insert( std::make_pair<string, TH2D* >("jwidth_cb_per_evt_"+recos[r], 0 ) );
   }
@@ -226,17 +234,17 @@ int main(int argc, char* argv[]) {
     TFile* ffit = TFile::Open(("./massfit_"+tagPrevMassFit+"_"+runPrevMassFit+".root").c_str(), "READ");
     if(ffit!=0) {    
       cout << "Using fit results from " <<  std::string(ffit->GetName()) << " as new nominal for smear0" << endl;
-	  // Read the sum of the pT corrections A, e or M from all the previous iterations
+      // Read the sum of the pT scale bias parameters A, e or M from all the previous iterations
       TH1D* h_A_vals_prevfit_in = (TH1D*)ffit->Get("h_A_vals_prevfit");
       TH1D* h_e_vals_prevfit_in = (TH1D*)ffit->Get("h_e_vals_prevfit");
       TH1D* h_M_vals_prevfit_in = (TH1D*)ffit->Get("h_M_vals_prevfit");
       for(unsigned int i=0; i<n_eta_bins; i++) {
-		// We will use curvature corrections, which are (-1) * pT corrections
+        // We will use curvature scale biases, which are (-1) * (pT scale biases)
 	    A_vals_fit(i) = -h_A_vals_prevfit_in->GetBinContent(i+1);
 	    e_vals_fit(i) = -h_e_vals_prevfit_in->GetBinContent(i+1);
 	    M_vals_fit(i) = -h_M_vals_prevfit_in->GetBinContent(i+1);
       }
-	  // Save the content of h_A_vals_prevfit_in to be passed to massfit.cpp without further changes
+      // Save the content of h_ _vals_prevfit_in to be passed to massfit.cpp without further changes
       h_A_vals_prevfit->Add(h_A_vals_prevfit_in, 1.0);
       h_e_vals_prevfit->Add(h_e_vals_prevfit_in, 1.0);
       h_M_vals_prevfit->Add(h_M_vals_prevfit_in, 1.0);
@@ -251,12 +259,14 @@ int main(int argc, char* argv[]) {
     TFile* ffit = TFile::Open(("./resolfit_"+tagPrevResolFit+"_"+runPrevResolFit+".root").c_str(), "READ");
     if(ffit!=0) {    
       cout << "Using fit results from " <<  std::string(ffit->GetName()) << " as MC smear" << endl;
+	  // Read the sum of the resolution biases c or d from all the previous iterations
       TH1D* h_c_vals_prevfit_in = (TH1D*)ffit->Get("h_c_vals_prevfit");
       TH1D* h_d_vals_prevfit_in = (TH1D*)ffit->Get("h_d_vals_prevfit");
       for(unsigned int i=0; i<n_eta_bins; i++){
 	    c_vals_fit(i) = h_c_vals_prevfit_in->GetBinContent(i+1);
 	    d_vals_fit(i) = h_d_vals_prevfit_in->GetBinContent(i+1);
       }
+	  // Save the content of h_ _vals_prevfit_in to be passed to resolfit.cpp without further changes
       h_c_vals_prevfit->Add(h_c_vals_prevfit_in, +1.0);
       h_d_vals_prevfit->Add(h_d_vals_prevfit_in, +1.0);
       ffit->Close();
@@ -264,20 +274,27 @@ int main(int argc, char* argv[]) {
     else {
       cout << "No smear fit file!" << endl;
     }    
-  }
+  }  
 
+  // Define a single output file, we will write to and read from it at the different iterations 
   TFile* fout = TFile::Open(("./massscales_"+tag+"_"+run+".root").c_str(), "RECREATE");
   
   // iter -1 -> data mass histos
   // iter  0 -> MC mass histos + calculation of jacobian terms per event
   // iter  1 -> MC jacobian histos
-  // iter  2 -> fit for beta(=scale bias) [,alpha(=resolution bias), nu(=normalization bias)]
+  // iter  2 -> fit for beta(= mass scale bias) [,alpha(= mass resolution bias), nu(= mass normalization bias)]
   
+  // By the end the output file will contain: 
+  // - histograms resulted from the event-loop at different iterations
+  // - TTree and histograms resulted from the mass fits
+  // - OPTIONAL, in the postfit/ folder, pre and postfit mass distribution for the 4D bins
+
   for(int iter=-1; iter<3; iter++) {
 
     if( !(iter>=firstIter && iter<=lastIter) ) continue;
     cout << "Doing iter " << iter << endl;
 
+    // Read the input files relevant to the current iteration
     vector<string> in_files = {};
     if(iter>=0) { // MC
       if(y2016) {
@@ -373,6 +390,7 @@ int main(int argc, char* argv[]) {
       }
     }
     
+	// Define dataframe for the input files relevant to the current iteration 
     ROOT::RDataFrame d( "Events", in_files );
     auto dlast = std::make_unique<RNode>(d);
         
@@ -399,13 +417,13 @@ int main(int argc, char* argv[]) {
 	    return true;
       }, {"idxs", "Muon_charge", "HLT_IsoMu24"} ));
       
-	  // Define MC weight
+      // Define MC weight
       dlast = std::make_unique<RNode>(dlast->Define("weight", [](float weight) -> float
 	  {
 	    return std::copysign(1.0, weight);
       }, {"Generator_weight"} ));          
       
-	  // Define pos and neg curvature k smeared according to A,e,M,c,d
+      // Define pos and neg curvature k smeared according to the curvature biases A,e,M,c,d computed in previous iterations
       dlast = std::make_unique<RNode>(dlast->Define("Muon_ksmear", [&](RVecUI idxs,
 									   RVecF Muon_pt, RVecF Muon_eta, RVecF Muon_phi, RVecF Muon_mass, RVecI Muon_charge,
 									   UInt_t nGenPart, RVecI GenPart_status, RVecI GenPart_statusFlags, RVecI GenPart_pdgId,
@@ -428,6 +446,7 @@ int main(int argc, char* argv[]) {
 	      else if( ROOT::Math::VectorUtil::DeltaR(gen, muP) > 0.1 && ROOT::Math::VectorUtil::DeltaR(gen, muM) < 0.1 ) gmuM = gen;
 	    }
 	
+	    // gen pT cut
 	    if( gmuP.Pt()>10. && gmuM.Pt()>10. ) {
 	  
 	      float kmuP = 1./muP.Pt();
@@ -440,6 +459,7 @@ int main(int argc, char* argv[]) {
 	      float resol_smear0P = 0.0;
 	      float resol_smear0M = 0.0;
 	  
+	      // AeMcd are eta dependent 
 	      unsigned int ietaP = n_eta_bins;
 	      for(unsigned int ieta_p = 0; ieta_p<n_eta_bins; ieta_p++) {
 	        float eta_p_low = eta_edges[ieta_p];
@@ -454,11 +474,12 @@ int main(int argc, char* argv[]) {
 	      }
 
 	      if(ietaP<n_eta_bins && ietaM<n_eta_bins) {
-			// Smear the MC curvature with the curvature corrections derived in previous iterations (which are respectively equal to (-1)* sum of the pT corrections from previous iterations)
+            // Correct the MC curvature with the curvature scale biases derived in previous iterations (which are respectively equal to (-1)* sum of the pT scale biases from previous iterations)
 	        scale_smear0P = (1. + A_vals_fit(ietaP) - e_vals_fit(ietaP)*kmuP + M_vals_fit(ietaP)/kmuP);
 	        scale_smear0M = (1. + A_vals_fit(ietaM) - e_vals_fit(ietaM)*kmuM - M_vals_fit(ietaM)/kmuM);
 	        //cout << "smear0:" << scale_smear0P << ": " << 1 << " + " << A_vals_fit(ietaP) << " - " << e_vals_fit(ietaP)*kmuP << " + " << M_vals_fit(ietaP)/kmuP << endl;
 	        if(usePrevResolFit) {
+			  // Correct the MC curvature with the resolution biases derived in previous iterations (which are respectively equal to the sum of the resolution biases from previous iterations)  	
 	          resol_smear0P = TMath::Sqrt( TMath::Max( 1.0 + c_vals_fit(ietaP) + d_vals_fit(ietaP)*kmuP, 0.0)  ) - 1.0;
 	          resol_smear0M = TMath::Sqrt( TMath::Max( 1.0 + c_vals_fit(ietaM) + d_vals_fit(ietaM)*kmuM, 0.0)  ) - 1.0;
 	          //cout << "resol_smear0P: sqrt( max(1.0 + " << c_vals_fit(ietaP)  << " + " << d_vals_fit(ietaP)*kmuP << ")) - 1.0 = " << resol_smear0P << endl;
@@ -547,7 +568,8 @@ int main(int argc, char* argv[]) {
 	    unsigned int idxM = Muon_charge[idxs[0]]>0 ? idxs[1] : idxs[0];
 	    ROOT::Math::PtEtaPhiMVector muP( Muon_pt[ idxP ], Muon_eta[ idxP ], Muon_phi[ idxP ], Muon_mass[ idxP ] );
 	    ROOT::Math::PtEtaPhiMVector muM( Muon_pt[ idxM ], Muon_eta[ idxM ], Muon_phi[ idxM ], Muon_mass[ idxM ] );
-	    ROOT::Math::PtEtaPhiMVector gmuP( 0., 0., 0., 0. );
+	    // gen matching
+		ROOT::Math::PtEtaPhiMVector gmuP( 0., 0., 0., 0. );
 	    ROOT::Math::PtEtaPhiMVector gmuM( 0., 0., 0., 0. );
 	    for(unsigned int i = 0; i < nGenPart; i++) {
 	      bool isGoodGenPart = (GenPart_status[i]==1 && (GenPart_statusFlags[i] & 1 || (GenPart_statusFlags[i] & (1<<5))) && TMath::Abs(GenPart_pdgId[i])==13);
@@ -559,7 +581,7 @@ int main(int argc, char* argv[]) {
 	
 	    if( gmuP.Pt()>10. && gmuM.Pt()>10.) {
 	      out.emplace_back( (gmuP + gmuM).M() );
-	      out.emplace_back( (muP + muM).M() ); //TODO this would be a problem if we don't save reco, posibly in other places too
+	      out.emplace_back( (muP + muM).M() );
     	  float ksmear0P = Muon_ksmear[0]>0. ? Muon_ksmear[0] : 1./(pt_edges[0]-0.01);
 	      float ksmear0M = Muon_ksmear[1]>0. ? Muon_ksmear[1] : 1./(pt_edges[0]-0.01);	  
     	  ROOT::Math::PtEtaPhiMVector muP_smear0( 1./ksmear0P, Muon_eta[ idxP ], Muon_phi[ idxP ], Muon_mass[ idxP ] );
@@ -580,6 +602,7 @@ int main(int argc, char* argv[]) {
 	      return masses.size()>0 ? masses.at( mpos ) : -99.;
 	    }, {"masses"} ));
 
+        // Define mass - gen mass
 	    dlast = std::make_unique<RNode>(dlast->Define(TString( (recos[r]+"_dm").c_str() ), [mpos](RVecF masses)
 		{
 	      return masses.size()>0 ? masses.at( mpos ) - masses.at(0) : -99.;
@@ -608,8 +631,10 @@ int main(int argc, char* argv[]) {
 	    float gm  = masses.at(0);
 	    for(unsigned int r = 0 ; r<recos.size(); r++) {
 	      unsigned int rpos = idx_map.at(recos[r]);
+		  // Gaussian mean and rms of the mass - gen mass distribution in a 4D bin
 	      TH1D* h_mean = h_map.at("mean_"+recos[r]);
 	      TH1D* h_rms  = h_map.at("rms_"+recos[r]);
+		  // Crystal Ball jacobian event weight in a 4D bin, in a mass - gen mass bin
 	      TH2D* h_jac_scale = h_jac_map.at("jscale_cb_per_evt_"+recos[r]);
 	      TH2D* h_jac_width = h_jac_map.at("jwidth_cb_per_evt_"+recos[r]);
 
@@ -636,7 +661,7 @@ int main(int argc, char* argv[]) {
       }, {"masses", "indexes"} ));
 
       for(unsigned int r = 0 ; r<recos.size(); r++) {
-        unsigned int jpos = (idx_map.at(recos[r])-1)*4; //TODO does this still work if I don't save reco unsmeared?
+        unsigned int jpos = (idx_map.at(recos[r])-1)*4;
 
 	    dlast = std::make_unique<RNode>(dlast->Define( TString((recos[r]+"_jscale_weight").c_str()), [jpos](RVecF weights_jac, float weight) -> float
 		{
@@ -676,7 +701,7 @@ int main(int argc, char* argv[]) {
 	  }, {"nMuon", "Muon_looseId", "Muon_dxybs", "Muon_isGlobal", "Muon_highPurity", "Muon_mediumId", "Muon_pfRelIso04_all",
 	  useKf ? "Muon_pt" : "Muon_cvhPt", useKf ? "Muon_eta" : "Muon_cvhEta"} ));
       
-	  // Filter for muon pairs
+      // Filter for muon pairs
       dlast = std::make_unique<RNode>(dlast->Filter( [](RVecUI idxs, RVecI Muon_charge, bool HLT_IsoMu24 )
 	  {
 	    if( idxs.size()!=2 || !HLT_IsoMu24) return false;
@@ -737,24 +762,27 @@ int main(int argc, char* argv[]) {
 	  }, {"idxs", useKf ? "Muon_pt" : "Muon_cvhPt", useKf ? "Muon_eta" : "Muon_cvhEta", useKf ? "Muon_phi" : "Muon_cvhPhi", "Muon_mass", "Muon_charge"} ));           
     }
     
-	// Vector of pointers to histograms output by the dataframe
+    // Vector of pointers to histograms output by the dataframe
     std::vector< ROOT::RDF::RResultPtr<TH1D> > df_histos1D;
     std::vector< ROOT::RDF::RResultPtr<TH2D> > df_histos2D;
     std::vector< ROOT::RDF::RResultPtr<TH3D> > df_histos3D;
   
     if(iter==-1) { // Book data histogram
+	  // x-axis: 4D bin index, y-axis: data mass, weight = 1
       df_histos2D.emplace_back(dlast->Histo2D({ "h_data_bin_m", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_data", "data_m", "weight" ));
       auto colNames = dlast->GetColumnNames();
       double total = *(dlast->Count());  
       std::cout << colNames.size() << " columns created. Total event count is " << total  << std::endl;
     }
     else if(iter==0) { // Book MC histograms
-	  //df_histos1D.emplace_back(dlast->Histo1D({"h_gen_m", "nominal", x_nbins, x_low, x_high}, "gen_m", "weight"));
-	  //df_histos1D.emplace_back(dlast->Histo1D({"h_reco_m", "nominal", x_nbins, x_low, x_high}, "reco_m", "weight"));
-	  //df_histos1D.emplace_back(dlast->Histo1D({"h_smear_m", "nominal", x_nbins, x_low, x_high}, "smear0_m", "weight"));
+      //df_histos1D.emplace_back(dlast->Histo1D({"h_gen_m", "nominal", x_nbins, x_low, x_high}, "gen_m", "weight"));
+      //df_histos1D.emplace_back(dlast->Histo1D({"h_reco_m", "nominal", x_nbins, x_low, x_high}, "reco_m", "weight"));
+      //df_histos1D.emplace_back(dlast->Histo1D({"h_smear_m", "nominal", x_nbins, x_low, x_high}, "smear0_m", "weight"));
       for(unsigned int r = 0 ; r<recos.size(); r++) {
-	    df_histos2D.emplace_back(dlast->Histo2D({ "h_"+TString(recos[r].c_str())+"_bin_m",    "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high},   "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", "weight" ));
-    	df_histos2D.emplace_back(dlast->Histo2D({ "h_"+TString(recos[r].c_str())+"_bin_dm",   "nominal", n_bins, 0, double(n_bins), dm_bins, dm_low, dm_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_dm", "weight"));
+		// x-axis: 4D bin index, y-axis: MC mass, weight = MC weight
+        df_histos2D.emplace_back(dlast->Histo2D({ "h_"+TString(recos[r].c_str())+"_bin_m",    "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high},   "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", "weight" ));
+    	// x-axis: 4D bin index, y-axis: MC mass - gen mass, weight = MC weight
+		df_histos2D.emplace_back(dlast->Histo2D({ "h_"+TString(recos[r].c_str())+"_bin_dm",   "nominal", n_bins, 0, double(n_bins), dm_bins, dm_low, dm_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_dm", "weight"));
     	//df_histos3D.emplace_back(dlast->Histo3D({ "h_"+TString(recos[r].c_str())+"_bin_gm_dm", "nominal", n_bins, 0, double(n_bins),  x_nbins, x_low, x_high, dm_bins, dm_low, dm_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_gm", TString(recos[r].c_str())+"_dm", "weight"));
     	//df_histos3D.emplace_back(dlast->Histo3D({ "h_"+TString(recos[r].c_str())+"_bin_gm_m", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high, x_nbins, x_low, x_high},     "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_gm", TString(recos[r].c_str())+"_m", "weight"));
       }
@@ -765,13 +793,18 @@ int main(int argc, char* argv[]) {
     else if(iter==1) { // Book jac histograms only for smear0
       for(unsigned int r = 0 ; r<recos.size(); r++){
 	    if(recos[r]!="smear0") continue;
+		// x-axis: 4D bin index, y-axis: MC mass, weight = gaussian scale jacobian event weight
     	df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_scale", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jscale_weight"));
-    	df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_width", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jwidth_weight"));
-    	df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_scale_cb", "cb", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jscale_cb_weight"));
-    	df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_width_cb", "cb", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jwidth_cb_weight"));
+    	// x-axis: 4D bin index, y-axis: MC mass, weight = gaussian width jacobian event weight
+		df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_width", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jwidth_weight"));
+    	// x-axis: 4D bin index, y-axis: MC mass, weight = Crystal Ball scale jacobian event weight
+		df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_scale_cb", "cb", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jscale_cb_weight"));
+    	// x-axis: 4D bin index, y-axis: MC mass, weight = Crystal Ball width jacobian event weight
+		df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_width_cb", "cb", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jwidth_cb_weight"));
       }
     }
 
+    // Write dataframe histograms
     if(iter<2) {
 	  fout->cd();
 	  std::cout << "Writing histos..." << std::endl;
@@ -801,7 +834,7 @@ int main(int argc, char* argv[]) {
       }
     }
     
-    if(iter==0) { // Fill histograms using the results from the dataframe
+    if(iter==0) { 
 
       cout << "Writing aux files" << endl;
       h_pt_edges->Write();
@@ -814,6 +847,8 @@ int main(int argc, char* argv[]) {
       h_M_vals_prevfit->Write();
       h_c_vals_prevfit->Write();
       h_d_vals_prevfit->Write();
+
+	  // Fill histograms using the results from the dataframe
       
       RooMsgService::instance().setGlobalKillBelow(RooFit::FATAL);
       gErrorIgnoreLevel = 6001;
@@ -826,15 +861,18 @@ int main(int argc, char* argv[]) {
 	      cout << "h_reco_dm/h_reco_m NOT FOUND" << endl;
 	      continue;
 	    }
+		// Gaussian mean and rms of the mass - gen mass distribution in a 4D bin
 	    h_map["mean_"+recos[r]] = new TH1D( TString( ("h_mean_"+recos[r]+"_bin_dm").c_str() ),"", n_bins, 0, double(n_bins));
 	    h_map["rms_"+recos[r]]  = new TH1D( TString( ("h_rms_"+recos[r]+"_bin_dm").c_str() ),"", n_bins, 0, double(n_bins));
-	    h_map["mask_"+recos[r]] = new TH1D( TString( ("h_mask_"+recos[r]+"_bin_dm").c_str() ),"", n_bins, 0, double(n_bins));
+	    // 1/0 if keeping(ignoring) a 4D bin in the fit
+		h_map["mask_"+recos[r]] = new TH1D( TString( ("h_mask_"+recos[r]+"_bin_dm").c_str() ),"", n_bins, 0, double(n_bins));
 	
+	    // Crystal Ball jacobian event weights in a 4D bin, in a mass - gen mass bin
 	    h_jac_map["jscale_cb_per_evt_"+recos[r]] = new TH2D("h_"+TString(recos[r].c_str())+"_bin_jscale_cb_per_evt", "cb", n_bins, 0, double(n_bins), dm_bins, dm_low, dm_high); 
 	    h_jac_map["jwidth_cb_per_evt_"+recos[r]] = new TH2D("h_"+TString(recos[r].c_str())+"_bin_jwidth_cb_per_evt", "cb", n_bins, 0, double(n_bins), dm_bins, dm_low, dm_high);
 	
 	    for(unsigned int i = 0; i<n_bins; i++ ) {
-	      if(i%1000==0) cout << "Doing gaus fit for bin " << i << " / " << n_bins << endl;
+	      if(i%1000==0) cout << "Doing gaus fit for 4D bin " << i << " / " << n_bins << endl;
 	      TString projname(Form("bin_%d_", i));
 	      projname += TString( recos[r].c_str() );
 	      TH1D* hi   = (TH1D*)h_reco_dm->ProjectionY( projname+"_dm", i+1, i+1 );
@@ -844,10 +882,12 @@ int main(int argc, char* argv[]) {
 	      double rms_i = 0.0;
 	      double rmserr_i = 0.0;
 	      //cout << hi_m->Integral() << ", " << hi->Integral() << ", " << hi_m->GetMean() << endl;
+		  
+		  // 4D bin selection cuts
 	      if( hi_m->Integral() > minNumEvents && hi->Integral() > minNumEvents  &&  hi_m->GetMean()>( x_low + 5.0 ) && hi_m->GetMean()<( x_high - 5.0 ) ) { //TODO make this 5.0 an input parameter
 	        h_map.at("mask_"+recos[r])->SetBinContent(i+1, 1);
 
-		    // Gaus fit
+            // Gaus fit
 	        TF1* gf = new TF1("gf","[0]/TMath::Sqrt(2*TMath::Pi())/[2]*TMath::Exp( -0.5*(x-[1])*(x-[1])/[2]/[2] )",
 			      hi->GetXaxis()->GetBinLowEdge(1), hi->GetXaxis()->GetBinUpEdge( hi->GetXaxis()->GetNbins() ));      
 	        gf->SetParameter(0, hi->Integral());
@@ -863,7 +903,7 @@ int main(int argc, char* argv[]) {
 	        //cout << "Fit " << mean_i << endl;
 	        delete gf;
             
-	        // CB fit
+	        // Crystal Ball fit
 	        RooRealVar x0("x0", "", mean_i, dm_low, dm_high); 
 			RooRealVar mass("mass", "", dm_low, dm_high); 
 	        mass.setRange("r1", dm_low, dm_high); 
@@ -889,6 +929,7 @@ int main(int argc, char* argv[]) {
 	        h_der->Reset();
 	        RooDerivative* der = pdf.derivative( mass, 1, 0.001 );
 	    
+		    // Crystal Ball jacobian event weights in a 4D bin, in a mass - gen mass bin
 	        for(int ib=1; ib<=h_der->GetXaxis()->GetNbins();ib++) {
 	          double x = h_der->GetXaxis()->GetBinCenter(ib);
 	          mass.setVal( x );
@@ -922,6 +963,7 @@ int main(int argc, char* argv[]) {
     else if(iter==2) {
       if(saveMassFitHistos && fout->GetDirectory("postfit")==0) fout->mkdir("postfit");
 
+      // Make tree with quantities relevant to the fit and the results
       TTree* treescales = new TTree("treescales","treescales");
       int inmassbins, indof, ibinIdx  ;
       float inevents, ibeta, ibetaErr, ialpha, ialphaErr, inu, inuErr, iprob, ichi2old, ichi2new; 
@@ -939,19 +981,21 @@ int main(int argc, char* argv[]) {
       treescales->Branch("ndof",&indof,"ndof/I");
       treescales->Branch("binIdx",&ibinIdx,"binIdx/I");
       
+	  // Define histograms to save results, x-axis is 4D bin index
       TH1D* h_scales  = new TH1D("h_scales", "", n_bins, 0, double(n_bins));
       TH1D* h_widths  = new TH1D("h_widths", "", n_bins, 0, double(n_bins));
       TH1D* h_norms   = new TH1D("h_norms", "", n_bins, 0, double(n_bins));
       TH1D* h_probs   = new TH1D("h_probs", "", n_bins, 0, double(n_bins));
       TH1D* h_masks   = new TH1D("h_masks", "", n_bins, 0, double(n_bins));
 
+      // Get histograms needed for the mass fit
       TH2D* h_data_2D   = (TH2D*)fout->Get("h_data_bin_m");
       TH2D* h_nom_2D    = (TH2D*)fout->Get("h_smear0_bin_m");
       TH1D* h_nom_mask  = (TH1D*)fout->Get("h_mask_smear0_bin_dm");
       TH2D* h_jscale_2D = useCB ? (TH2D*)fout->Get("h_smear0_bin_jac_scale_cb") : (TH2D*)fout->Get("h_smear0_bin_jac_scale");
       TH2D* h_jwidth_2D = useCB ? (TH2D*)fout->Get("h_smear0_bin_jac_width_cb") : (TH2D*)fout->Get("h_smear0_bin_jac_width");
       
-      for(unsigned int ibin=0; ibin<n_bins; ibin++) {
+      for(unsigned int ibin=0; ibin<n_bins; ibin++) { // Loop over 4D bins
 
 	    // skip empty bins
 	    if( h_nom_mask->GetBinContent(ibin+1)<0.5 ) continue;
@@ -999,7 +1043,7 @@ int main(int argc, char* argv[]) {
 	    inevents = h_data_i->Integral();
 	    inmassbins = n_mass_bins;
 	
-	    // the data
+	    // Get mass fit terms
         MatrixXd inv_sqrtV(n_mass_bins,n_mass_bins);
 	    MatrixXd inv_V(n_mass_bins,n_mass_bins);
 	    for(unsigned int ibm = 0; ibm<n_mass_bins; ibm++ ) {
@@ -1039,6 +1083,7 @@ int main(int argc, char* argv[]) {
 	      if(fitNorm)  jac(ib, 2) = y0(ib);
 	    }
 
+        // Mass fit
 	    MatrixXd A = inv_sqrtV*jac;
 	    VectorXd b = inv_sqrtV*(y-y0);
 	    VectorXd x = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
@@ -1070,7 +1115,7 @@ int main(int argc, char* argv[]) {
 	    treescales->Fill();
 	    //cout << "Filling tree" << endl;
 	
-    	h_scales->SetBinContent(ibin+1, ibeta+1.0);
+        h_scales->SetBinContent(ibin+1, ibeta+1.0);
         h_scales->SetBinError(ibin+1, ibetaErr);
 	    h_norms->SetBinContent(ibin+1, inu+1.0);
 	    h_norms->SetBinError(ibin+1, inuErr);
@@ -1080,6 +1125,7 @@ int main(int argc, char* argv[]) {
 	    h_probs->SetBinError(ibin+1, 0.);
 	    h_masks->SetBinContent(ibin+1, 1.0);
 
+        // Optional: save pre and postfit mass distribution in 4D bin
 	    if(saveMassFitHistos) {
 	      TH1D* h_pre_i   = (TH1D*)h_nom_i->Clone(Form("h_prefit_%d", ibin));
 	      TH1D* h_post_i  = (TH1D*)h_nom_i->Clone(Form("h_postfit_%d", ibin));
