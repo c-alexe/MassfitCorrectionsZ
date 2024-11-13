@@ -100,7 +100,7 @@ public:
     n_dof_ = 0;
     
     // Prepare storage for fit inputs and results
-    scales2_.reserve(n_data_); // mass scales^2
+    scales2_.reserve(n_data_); // mass scale bias -> (beta + 1.0)^2
     scales2Err_.reserve(n_data_);
     masks_.reserve(n_data_); // 1/0 if keeping(ignoring) a 4D bin in the fit
     for(unsigned int idata = 0; idata<n_data_; idata++) {
@@ -166,7 +166,7 @@ public:
     else if(bias_== -1) { // Data mode
       // Read scales and masks per 4D bin from input file
       TFile* fin = TFile::Open(fname.c_str(), "READ");
-      TH1D* h_scales = (TH1D*)fin->Get("h_scales");
+      TH1D* h_scales = (TH1D*)fin->Get("h_scales"); // mass scale bias -> beta + 1.0
       TH1D* h_masks = (TH1D*)fin->Get("h_masks");
       assert( h_scales->GetXaxis()->GetNbins() == n_data_);
 
@@ -237,7 +237,7 @@ public:
   
   ~TheoryFcn() { delete ran_;}
 
-  // In toy mode, function to generate mass scale^2 values from given AeM
+  // In toy mode, function to generate mass scale bias^2 values from given AeM
   void generate_data();
 
   // Function to set the seed value for random numbers
@@ -277,7 +277,7 @@ public:
   virtual double Up() const {return errorDef_;}
   virtual void SetErrorDef(double def) {errorDef_ = def;}
 
-  // Function to be minimised from mass scale^2 values, errors and pT scale biases parameters AeM
+  // Function to be minimised from mass scale bias ^2 values, errors and pT scale biases parameters AeM
   virtual double operator()(const vector<double>&) const;
   // Function for analytical gradient of the function to be minimised
   virtual vector<double> Gradient(const vector<double>& ) const;
@@ -313,7 +313,7 @@ private:
   TRandom3* ran_;
 };
 
-// In toy mode, function to generate mass scale^2 values and errors from given pT scale bias AeM via Gaussian sampling
+// In toy mode, function to generate mass scale bias ^2 values and errors from given pT scale bias AeM via Gaussian sampling
 void TheoryFcn::generate_data() {
   double chi2_start = 0.;
   unsigned int ibin = 0;
@@ -324,7 +324,7 @@ void TheoryFcn::generate_data() {
 	      for(unsigned int ipt_m = 0; ipt_m<n_pt_bins_; ipt_m++) {
 	        double k_m = kmean_vals_[ipt_m];
 
-	        // Draw error on mass scale^2 centered around ierr2_nom as function of eta
+	        // Draw error on mass scale bias ^2 centered around ierr2_nom as function of eta
 	        double ierr2_nom = 0.0001*(1+double(ieta_p)/n_eta_bins_)*(1+double(ieta_m)/n_eta_bins_);
 	        //*(2-0.1*double(ipt_p)/n_pt_bins_)*(2-0.1*double(ipt_m)/n_pt_bins_);
 	        double ierr2 = ran_->Gaus(ierr2_nom,  ierr2_nom*0.1);
@@ -353,7 +353,7 @@ void TheoryFcn::generate_data() {
   return;
 }
 
-// Define function to be minimised from mass scale^2 values and errors and pT scale biases parameters AeM -> will obtain AeM
+// Define function to be minimised from mass scale bias ^2 values and errors and pT scale biases parameters AeM -> will obtain AeM
 double TheoryFcn::operator()(const vector<double>& par) const {
 
   double val = 0.0;
@@ -596,15 +596,15 @@ int main(int argc, char* argv[]) {
   TH1D* h_e_vals_fit  = new TH1D("h_e_vals_fit", "#hat{e}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_M_vals_fit  = new TH1D("h_M_vals_fit", "#hat{M}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_Ain_vals_fit  = new TH1D("h_Ain_vals_fit", "(#hat{A}-#hat{e}#bar{k})", n_parameters/3, 0, n_parameters/3);
-  TH1D* h_ein_vals_fit  = new TH1D("h_ein_vals_fit", "#hat{e}/#bar{k}", n_parameters/3, 0, n_parameters/3);
-  TH1D* h_Min_vals_fit  = new TH1D("h_Min_vals_fit", "#hat{M}#bar{k}", n_parameters/3, 0, n_parameters/3);
+  TH1D* h_ein_vals_fit  = new TH1D("h_ein_vals_fit", "#hat{e}#bar{k}", n_parameters/3, 0, n_parameters/3);
+  TH1D* h_Min_vals_fit  = new TH1D("h_Min_vals_fit", "#hat{M}/#bar{k}", n_parameters/3, 0, n_parameters/3);
   
   // We will overwrite the _prevfit histograms to contain the sum of pT scale biases A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
   TH1D* h_A_vals_prevfit  = new TH1D("h_A_vals_prevfit", "#hat{A}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_e_vals_prevfit  = new TH1D("h_e_vals_prevfit", "#hat{e}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_M_vals_prevfit  = new TH1D("h_M_vals_prevfit", "#hat{M}", n_parameters/3, 0, n_parameters/3);
 
-  // Toy mode: mass scales from input pT scale bias AeM
+  // Toy mode: mass scale biases from input pT scale bias AeM
   TH2D* h_scales_nom_plus   = new TH2D("h_scales_nom_plus", "scales nominal plus; #eta bin", n_parameters/3, 0, n_parameters/3,
 				       50, fFCN->get_first_pt_edge(), fFCN->get_last_pt_edge() );
   // Data mode: scales from the sum of pT scale biases A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
