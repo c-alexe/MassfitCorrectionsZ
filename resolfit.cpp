@@ -56,7 +56,7 @@ public:
     if(bias==-1) { // data mode, matches binning in masscales_data.cpp
       TFile* fin = TFile::Open(fname.c_str(), "READ");
       if(fin==0) {
-	      cout << "No file!" << endl;
+	      cout << "No data file found! Will quit" << endl;
   	    return;
       }
       else {
@@ -153,6 +153,10 @@ public:
     else if(bias==-1) { // Data mode
       // Read widths and masks per 4D bin from input file
       TFile* fin = TFile::Open(fname.c_str(), "READ");
+      if(fin==0) {
+        cout << "No data file found! Will quit" << endl;
+        return;
+      }
       TH1D* h_widths = (TH1D*)fin->Get("h_widths"); // mass width bias -> alpha + 1.0
       TH1D* h_masks = (TH1D*)fin->Get("h_masks"); // 1/0 if keeping(ignoring) a 4D bin in the fit
       assert( h_widths->GetXaxis()->GetNbins() == n_data_);
@@ -203,6 +207,9 @@ public:
 	        }
 	      }
 	      faux->Close();
+      } else {
+        cout << "No nominal resolution file found! Will quit" << endl;
+        return;
       }      
     }
 
