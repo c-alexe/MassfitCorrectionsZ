@@ -1,5 +1,5 @@
-// It can be ran in data mode -> takes the width biases per 4D bin as input and fits for c,d per eta bin 
-// OR toys mode (closure test) -> generates width biases from dummy cd bias and fits for cd from them
+// It can be ran in data mode -> takes the mass width biases per 4D bin and fits for the pT resolution bias parameters c,d per eta 
+// OR toys mode (closure test) -> generates mass width biases from dummy cd biases and fits for cd from them
 // Authors: Cristina Alexe, Lorenzo Bianchini
 
 #include <ROOT/RDataFrame.hxx>
@@ -53,10 +53,10 @@ public:
     ran_ = new TRandom3(seed);
 
     // pT and eta binning
-    if(bias==-1) { // data mode
+    if(bias==-1) { // data mode, matches binning in masscales_data.cpp
       TFile* fin = TFile::Open(fname.c_str(), "READ");
       if(fin==0) {
-	      cout << "No file!" << endl;
+	      cout << "No data file found! Will quit" << endl;
   	    return;
       }
       else {
@@ -84,38 +84,37 @@ public:
 	                  0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4};
     }
 
-    // pt_edges_  = {25, 30, 35}; 
-    //eta_edges_ = {-3.0, -2.5, -2.0};
-
     n_pt_bins_  = pt_edges_.size()-1;
     n_eta_bins_ = eta_edges_.size()-1;
 
     n_pars_ = 2*n_eta_bins_;
     
-    for(auto p : pt_edges_) k_edges_.emplace_back(1./p);
+    for(auto p : pt_edges_) k_edges_.emplace_back(1./p); // curvature k
     for(unsigned int i = 0; i < n_pt_bins_; i++) kmean_vals_.emplace_back( 0.5*(k_edges_[i]+k_edges_[i+1]) );
     kmean_val_ = 0.5*(kmean_vals_[n_pt_bins_-1] + kmean_vals_[0]);
 
-    n_data_ = n_eta_bins_*n_eta_bins_*n_pt_bins_*n_pt_bins_;
+    n_data_ = n_eta_bins_*n_eta_bins_*n_pt_bins_*n_pt_bins_; // number of 4D bins
     n_dof_ = 0;
     
     // Prepare storage for fit inputs and results
-    sigmas2_.reserve(n_data_);
+    sigmas2_.reserve(n_data_); // mass widths biases -> (alpha + 1.0)^2
     sigmas2Err_.reserve(n_data_);
-    resols2_.reserve(n_data_/2);
-    masks_.reserve(n_data_);
+    resols2_.reserve(n_eta_bins_*n_pt_bins_); // nominal (pT resolution divided by pT)^2 , as a function of eta and pT
+    masks_.reserve(n_data_); // 1/0 if keeping(ignoring) a 4D bin in the fit
     for(unsigned int idata = 0; idata<n_data_; idata++) {
       sigmas2_.push_back( 0.0 );
       sigmas2Err_.push_back( 0.0 );
       masks_.push_back(1);
     }
-    for(unsigned int idata = 0; idata<n_data_/2; idata++) {
+    for(unsigned int idata = 0; idata<n_eta_bins_*n_pt_bins_; idata++) {
       resols2_.push_back(1.0e-04);
     }
 
-    x_vals_ = VectorXd(n_pars_); // Holds all c,d parameters in a single vector in this order
+    // Toys mode: input pT resolution biases c,d
+    x_vals_ = VectorXd(n_pars_); // Holds all input c,d parameters in a single vector in this order
     c_vals_ = VectorXd(n_eta_bins_);
     d_vals_ = VectorXd(n_eta_bins_);
+    // Sum of the pT resolution biases c or d from all the previous iterations
     c_vals_prevfit_ = VectorXd(n_eta_bins_);
     d_vals_prevfit_ = VectorXd(n_eta_bins_);
     for(unsigned int i=0; i<n_eta_bins_; i++) {
@@ -128,7 +127,7 @@ public:
       x_vals_(i) = 0.0;
     }
 
-    if(bias_>0) { // toys mode only 
+    if(bias_>0) { // Toys mode only 
       // bias for c out
       for(unsigned int i=0; i<n_eta_bins_; i++) {
 	      double val = ran_->Uniform(-0.01, 0.01);
@@ -151,11 +150,15 @@ public:
       }
       n_dof_ = n_data_ - n_pars_;
     }
-    else if(bias==-1) { // data mode
+    else if(bias==-1) { // Data mode
       // Read widths and masks per 4D bin from input file
       TFile* fin = TFile::Open(fname.c_str(), "READ");
-      TH1D* h_widths = (TH1D*)fin->Get("h_widths");
-      TH1D* h_masks = (TH1D*)fin->Get("h_masks");
+      if(fin==0) {
+        cout << "No data file found! Will quit" << endl;
+        return;
+      }
+      TH1D* h_widths = (TH1D*)fin->Get("h_widths"); // mass width bias -> alpha + 1.0
+      TH1D* h_masks = (TH1D*)fin->Get("h_masks"); // 1/0 if keeping(ignoring) a 4D bin in the fit
       assert( h_widths->GetXaxis()->GetNbins() == n_data_);
 
       unsigned int n_unmasked_bins = 0;  
@@ -170,7 +173,7 @@ public:
       n_dof_ = n_unmasked_bins - n_pars_;
       n_data_ = n_unmasked_bins;
 
-      // cd values obtained in the previous fit
+      // Read from massscales_data.cpp the sum of pT resolution biases c or d obtained from all the previous iterations
       TH1D* h_c_vals_prevfit = (TH1D*)fin->Get("h_c_vals_prevfit");
       TH1D* h_d_vals_prevfit = (TH1D*)fin->Get("h_d_vals_prevfit");
 
@@ -181,6 +184,7 @@ public:
       
       fin->Close();
 
+      // Work out nominal (pT resolution divided by pT)^2 , as a function of eta and pT
       TFile* faux = TFile::Open("./root/coefficients2016ptfrom20forscaleptfrom20to70forres.root", "READ");
       if(faux!=0) {
 	      TH1D* histobudget = (TH1D*)faux->Get("histobudget");
@@ -203,6 +207,9 @@ public:
 	        }
 	      }
 	      faux->Close();
+      } else {
+        cout << "No nominal resolution file found! Will quit" << endl;
+        return;
       }      
     }
 
@@ -231,10 +238,10 @@ public:
   // In toy mode, function to generate sigma^2 values from given cd
   void generate_data();
 
-  // Function to set the seed value
+  // Function to set the seed value for random numbers
   void set_seed(const int& seed){ ran_->SetSeed(seed);}
 
-  // Function to get external or internal true parameter values from index
+  // Function to get external or internal true parameter values from index (for toys)
   double get_true_params(const unsigned int& i, const bool& external) {
     if(external)
       return x_vals_(i);
@@ -242,6 +249,7 @@ public:
       return (U_*x_vals_)(i);
   }
 
+  // Get the sum of pT resolution biases c or d obtained from all the previous iterations
   double get_c_prevfit(const unsigned int& i){
     return c_vals_prevfit_(i);
   }
@@ -256,6 +264,7 @@ public:
   double get_first_pt_edge(){ return pt_edges_.at(0) ;}
   double get_last_pt_edge(){ return pt_edges_.at(n_pt_bins_) ;} 
 
+  // Get the transformation of external to internal parameters
   double get_U(const unsigned int& i, const unsigned int& j) {
     return U_(i,j);
   }
@@ -263,7 +272,7 @@ public:
   virtual double Up() const {return errorDef_;}
   virtual void SetErrorDef(double def) {errorDef_ = def;}
 
-  // Function to be minimised from sigma^2 values, errors and cd parameters
+  // Function to be minimised from mass sigma^2 values, errors and pT resolution biases parameters cd
   virtual double operator()(const vector<double>&) const;
   // Function for analytical gradient of the function to be minimised
   virtual vector<double> Gradient(const vector<double>& ) const;
@@ -299,7 +308,7 @@ private:
   TRandom3* ran_;
 };
 
-// In toy mode, function to generate sigma^2 values from given cd
+// In toy mode, function to generate mass width bias ^2 values and errors from given pT resolution bias cd via Gaussian sampling
 void TheoryFcn::generate_data() {
   double chi2_start = 0.;
   unsigned int ibin = 0;
@@ -336,36 +345,41 @@ void TheoryFcn::generate_data() {
   return;
 }
 
-// Define function to be minimised from sigma^2 values, errors and cd parameters
+// Define function to be minimised from mass width bias ^2 values and errors and pT resolution biases parameters cd -> will obtain cd
 double TheoryFcn::operator()(const vector<double>& par) const {
 
   double val = 0.0;
   const unsigned int npars = par.size();
 
+  // Keep track of 4D bins (the data points)
   unsigned int ibin = 0;
-  for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) {
+  // +ve muon term
+  for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) { // cd are eta dependent
     double c_p = par[ieta_p];
     double d_p = par[ieta_p+n_eta_bins_];
     for(unsigned int ipt_p = 0; ipt_p < n_pt_bins_; ipt_p++) {   
       double k_p = kmean_vals_[ipt_p];
-      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) {
+      // -ve muon term
+      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) { // cd are eta dependent
 	      double c_m = par[ieta_m];
 	      double d_m = par[ieta_m+n_eta_bins_];
 	      for(unsigned int ipt_m = 0; ipt_m < n_pt_bins_; ipt_m++) {	  
 	        double k_m = kmean_vals_[ipt_m];
+
 	        double fp = resols2_[ieta_p*n_pt_bins_ + ipt_p]/(resols2_[ieta_p*n_pt_bins_ + ipt_p]+resols2_[ieta_m*n_pt_bins_ + ipt_m]);
 	        double fm = 1.0 - fp;
 	        double term = 1.0 +  fp*( c_p + d_p*(k_p-kmean_val_)/kmean_val_ ) + fm*( c_m + d_m*(k_m-kmean_val_)/kmean_val_ );
-	        double ival = (sigmas2_[ibin] - term)/sigmas2Err_[ibin];
+	        // Function to be minimized is ( chi2/ndf - 1 )
+          double ival = (sigmas2_[ibin] - term)/sigmas2Err_[ibin];
 	        double ival2 = ival*ival;
-	        if(masks_[ibin])
+	        if(masks_[ibin]) // check if accepting or ignoring the 4D bin
 	          val += ival2;
 	        ibin++;
 	      }
       }
     }
   }
-  // Minimize ( chi2/ndf - 1 )
+  // Function to be minimized is ( chi2/ndf - 1 )
   val /= n_dof_;  
   val -= 1.0;
   
@@ -377,21 +391,26 @@ vector<double> TheoryFcn::Gradient(const vector<double> &par ) const {
   //cout << "Using gradient" << endl; 
   vector<double> grad(par.size(), 0.0);
 
-  // Loop over all parameters
+  // Loop over all cd parameters
   for(unsigned int ipar = 0; ipar < par.size(); ipar++) {
     unsigned int ieta     = ipar % n_eta_bins_;
     unsigned int par_type = ipar / n_eta_bins_;    
     //cout << "ipar " << ipar << ": " << ieta << ", " << par_type << endl;
-    double grad_i = 0.0;    
+    
+    // Gradient of function to be minimized wrt to a given parameter in a given 4D bin
+    double grad_i = 0.0;
+    // Keep track of 4D bins (the data points)    
     unsigned int ibin = 0;
 
-    // Loop over 4D bin terms
-    for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) {
+    // For the given parameter, check all the 4D bins (data points)
+    // +ve muon term
+    for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) { // cd are eta dependent
       double c_p = par[ieta_p];
       double d_p = par[ieta_p+n_eta_bins_];
       for(unsigned int ipt_p = 0; ipt_p < n_pt_bins_; ipt_p++) {   
-	      double k_p = kmean_vals_[ipt_p];       	
-	      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) {
+	      double k_p = kmean_vals_[ipt_p];      
+        // -ve muon term 	
+	      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) { // cd are eta dependent
 	        double c_m = par[ieta_m];
 	        double d_m = par[ieta_m+n_eta_bins_];
 	        for(unsigned int ipt_m = 0; ipt_m < n_pt_bins_; ipt_m++) {	  
@@ -401,24 +420,25 @@ vector<double> TheoryFcn::Gradient(const vector<double> &par ) const {
 	          double fm = 1.0 - fp;
 
 	          double ig = 0.0;
-	          if( ieta == ieta_p || ieta == ieta_m ) {
+	          if( ieta == ieta_p || ieta == ieta_m ) { // if this 4D bin contains the relevant parameter
 	            double term = 1.0 +  fp*( c_p + d_p*(k_p-kmean_val_)/kmean_val_ ) + fm*( c_m + d_m*(k_m-kmean_val_)/kmean_val_ );
 	            ig = -2*(sigmas2_[ibin] - term)/sigmas2Err_[ibin]/sigmas2Err_[ibin];
 	            double p_term = 0.;
 	            double m_term = 0.;
-	            if(par_type==0) {
+	            if(par_type==0) { // c
 		            p_term = fp;
 		            m_term = fm;
 	            }
-	            else {
+	            else { // d
 		            p_term = fp*(k_p-kmean_val_)/kmean_val_;
 		            m_term = fm*(k_m-kmean_val_)/kmean_val_;
 	            }
-	            ig *= (p_term*( ieta == ieta_p ) + m_term*( ieta == ieta_m ) );
+	            ig *= (p_term*( ieta == ieta_p ) + m_term*( ieta == ieta_m ) ); // logic expression checks if the relevant parameter appears in the +ve or -ve term or both
 	          }
+            // Function to be minimized is ( chi2/ndf - 1 )
 	          ig /= n_dof_;
 	          //cout << "ibin " << ibin << " += " << ig << endl;
-	          if(masks_[ibin])
+	          if(masks_[ibin]) // check if accepting or ignoring the 4D bin
 	            grad_i += ig;
 	          ibin++;
 	        }
@@ -450,9 +470,9 @@ int main(int argc, char* argv[]) {
 	    ("tag",         value<std::string>()->default_value("closure"), "tag of input data")
 	    ("run",         value<std::string>()->default_value("closure"), "run of input data")
 	    ("bias",        value<int>()->default_value(0), "bias [-1 for data, >0 for toys: 1 for uniform random bias, 2 for eta dependent bias]")
-	    ("maxSigmaErr", value<double>()->default_value(0.2), "max error on width to accept a data point")
+	    ("maxSigmaErr", value<double>()->default_value(0.2), "max error on mass width bias to accept a data point")
 	    ("infile",      value<std::string>()->default_value("massscales"), "type of input data")
-	    ("seed",        value<int>()->default_value(4357), "seed");
+	    ("seed",        value<int>()->default_value(4357), "seed for random toys with different cd bias");
 
     store(parse_command_line(argc, argv, desc), vm);
     notify(vm);
@@ -490,29 +510,30 @@ int main(int argc, char* argv[]) {
   tree->Branch("hasAccurateCovar", &hasAccurateCovar, "hasAccurateCovar/I");
   tree->Branch("hasPosDefCovar", &hasPosDefCovar, "hasPosDefCovar/I");
 
-  // Initialize function to be minimized
+  // Initialize function to be minimized ( chi2/ndf - 1 )
   int debug = 0;
   string infname = infile+"_"+tag+"_"+run+".root";
   TheoryFcn* fFCN = new TheoryFcn(debug, seed, bias, infname, maxSigmaErr);  
   fFCN->SetErrorDef(1.0 / fFCN->get_n_dof());
   unsigned int n_parameters = fFCN->get_n_params();
+  // Get the transformation of external to internal parameters
   MatrixXd U(n_parameters,n_parameters);
   for (int i=0; i<n_parameters; i++) {
     for (int j=0; j<n_parameters; j++) {
       U(i,j) = fFCN->get_U(i,j);
     }
   }
-  MatrixXd Uinv = U.inverse();
+  MatrixXd Uinv = U.inverse(); // transformation of internal to external parameters
   
-  // Single vectors to store all cd parameters
-  vector<double> tparIn0(n_parameters);  // internal, true
+  // Single vectors to store all pT resolution bias parameters cd
+  vector<double> tparIn0(n_parameters);  // internal, true (toys)
   vector<double> tparIn(n_parameters);   // internal, fitted
   vector<double> tparInErr(n_parameters);
-  vector<double> tparOut0(n_parameters); // external, true
+  vector<double> tparOut0(n_parameters); // external, true (toys)
   vector<double> tparOut(n_parameters);  // external, fitted
   vector<double> tparOutErr(n_parameters);
 
-  // Fit parameters branches
+  // Fit parameters TTree branches
   for (int i=0; i<n_parameters/2; i++) {
     tree->Branch(Form("c%d",i),       &tparOut[i],    Form("c%d/D",i));
     tree->Branch(Form("c%d_true",i),  &tparOut0[i],   Form("c%d_true/D",i));
@@ -530,24 +551,26 @@ int main(int argc, char* argv[]) {
     tree->Branch(Form("d%d_inerr",i),  &tparInErr[i+n_parameters/2],  Form("d%d_inerr/D",i));
   }
 
-  // Fit parameters histograms
+  // Nom histograms needed for toy mode
   TH1D* h_c_vals_nom  = new TH1D("h_c_vals_nom", "c nominal", n_parameters/2, 0, n_parameters/2);
   TH1D* h_d_vals_nom  = new TH1D("h_d_vals_nom", "d nominal", n_parameters/2, 0, n_parameters/2);
   TH1D* h_cin_vals_nom  = new TH1D("h_cin_vals_nom", "(c+d#bar{k})", n_parameters/2, 0, n_parameters/2);
   TH1D* h_din_vals_nom  = new TH1D("h_din_vals_nom", "d/#bar{k} nominal", n_parameters/2, 0, n_parameters/2);
 
+  // Save external and internal fitted parameters representing pT resolution biases c or d obtained in the current iteration
   TH1D* h_c_vals_fit  = new TH1D("h_c_vals_fit", "#hat{c}", n_parameters/2, 0, n_parameters/2);
   TH1D* h_d_vals_fit  = new TH1D("h_d_vals_fit", "#hat{d}", n_parameters/2, 0, n_parameters/2);
   TH1D* h_cin_vals_fit  = new TH1D("h_cin_vals_fit", "(#hat{c}+#hat{d}#bar{k})", n_parameters/2, 0, n_parameters/2);
-  TH1D* h_din_vals_fit  = new TH1D("h_din_vals_fit", "#hat{d}/#bar{k}", n_parameters/2, 0, n_parameters/2);
+  TH1D* h_din_vals_fit  = new TH1D("h_din_vals_fit", "#hat{d}#bar{k}", n_parameters/2, 0, n_parameters/2);
 
+  // We will overwrite the _prevfit histograms to contain the sum of pT resolution biases c or d obtained in all the previous iterations + the ones obtained in the current iteration
   TH1D* h_c_vals_prevfit  = new TH1D("h_c_vals_prevfit", "#hat{c}", n_parameters/2, 0, n_parameters/2);
   TH1D* h_d_vals_prevfit  = new TH1D("h_d_vals_prevfit", "#hat{d}", n_parameters/2, 0, n_parameters/2);
 
-  // Widths from input cd
+  // Toy mode: mass width biases from input pT resolution bias cd
   TH2D* h_resols_nom   = new TH2D("h_resols_nom", "resols nominal; #eta bin", n_parameters/2, 0, n_parameters/2,
 				       50, fFCN->get_first_pt_edge(), fFCN->get_last_pt_edge() );
-  // Widths from previous fit cd
+  // Data mode: scales from the sum of pT resolution biases c or d obtained in all the previous iterations + the ones obtained in the current iteration
   TH2D* h_resols_fit   = new TH2D("h_resols_fit", "resols; #eta bin", n_parameters/2, 0, n_parameters/2,
 				       50, fFCN->get_first_pt_edge(), fFCN->get_last_pt_edge() );
 
@@ -556,6 +579,7 @@ int main(int argc, char* argv[]) {
   int verbosity = int(ntoys<2); 
   ROOT::Minuit2::MnPrint::SetGlobalLevel(verbosity);
   
+  if(bias<0) assert( ntoys == 1); // use ntoys==1 for data
   for(unsigned int itoy=0; itoy<ntoys; itoy++) {
 
     if(itoy%10==0) cout << "Toy " << itoy << " / " << ntoys << endl;
@@ -741,6 +765,7 @@ int main(int argc, char* argv[]) {
   fout->cd();
   tree->Write();
 
+  // For toys, pull distributions of the fitted vs true cd parameters
   TH1D* hpulls = new TH1D("hpulls", "", n_parameters, 0, n_parameters);
   TH1D* hsigma = new TH1D("hsigma", "", n_parameters, 0, n_parameters);
   for (int i=0; i<n_parameters; i++) {

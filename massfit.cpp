@@ -1,5 +1,5 @@
-// It can be ran in data mode -> takes the scale biases per 4D bin as input and fits for A,e,M per eta bin 
-// OR toys mode (closure test) -> generates scale biases from dummy AeM bias and fits for AeM from them
+// It can be ran in data mode ->  takes the mass scale biases per 4D bin and fits for the pT scale biases parameters A,e,M per eta bin 
+// OR toys mode (closure test) -> generates mass scale biases from dummy AeM biases and fits for AeM from them
 // Authors: Cristina Alexe, Lorenzo Bianchini
 
 #include <ROOT/RDataFrame.hxx>
@@ -56,10 +56,10 @@ public:
     ran_ = new TRandom3(seed_);
 
     // pT and eta binning
-    if(bias_==-1) { // data mode
+    if(bias_==-1) { // data mode, matches binning in masscales_data.cpp
       TFile* fin = TFile::Open(fname.c_str(), "READ");
       if(fin==0) {
-	      cout << "No file!" << endl;
+	      cout << "No data file found! Will quit" << endl;
   	    return;
       }
       else {
@@ -87,35 +87,34 @@ public:
                     0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4};
     }
 
-    // pt_edges_  = {25, 30, 35}; 
-    //eta_edges_ = {-3.0, -2.5, -2.0};
-
     n_pt_bins_  = pt_edges_.size()-1;
     n_eta_bins_ = eta_edges_.size()-1;
 
     n_pars_ = 3*n_eta_bins_;
     
-    for(auto p : pt_edges_) k_edges_.emplace_back(1./p);
+    for(auto p : pt_edges_) k_edges_.emplace_back(1./p); // curvature k
     for(unsigned int i = 0; i < n_pt_bins_; i++) kmean_vals_.emplace_back( 0.5*(k_edges_[i]+k_edges_[i+1]) );
     kmean_val_ = 0.5*(kmean_vals_[n_pt_bins_-1] + kmean_vals_[0]);
 
-    n_data_ = n_eta_bins_*n_eta_bins_*n_pt_bins_*n_pt_bins_;
+    n_data_ = n_eta_bins_*n_eta_bins_*n_pt_bins_*n_pt_bins_; // number of 4D bins
     n_dof_ = 0;
     
     // Prepare storage for fit inputs and results
-    scales2_.reserve(n_data_);
+    scales2_.reserve(n_data_); // mass scale bias -> (beta + 1.0)^2
     scales2Err_.reserve(n_data_);
-    masks_.reserve(n_data_);
+    masks_.reserve(n_data_); // 1/0 if keeping(ignoring) a 4D bin in the fit
     for(unsigned int idata = 0; idata<n_data_; idata++) {
       scales2_.push_back( 0.0 );
       scales2Err_.push_back( 0.0 );
       masks_.push_back(1);
     }
 
-    x_vals_ = VectorXd(n_pars_); // Holds all A,e,M parameters in a single vector in this order
+    // Toys mode: input pT scale biases A,e,M
+    x_vals_ = VectorXd(n_pars_); // Holds all input A,e,M biases in a single vector in this order
     A_vals_ = VectorXd(n_eta_bins_);
     e_vals_ = VectorXd(n_eta_bins_);
     M_vals_ = VectorXd(n_eta_bins_);
+    // Sum of the pT scale biases A, e or M from all the previous iterations
     A_vals_prevfit_ = VectorXd(n_eta_bins_);
     e_vals_prevfit_ = VectorXd(n_eta_bins_);
     M_vals_prevfit_ = VectorXd(n_eta_bins_);
@@ -131,7 +130,7 @@ public:
       x_vals_(i) = 0.0;
     }
 
-    if(bias_>0) { // toys mode only 
+    if(bias_>0) { // Toys mode only 
       // bias for A out
       for(unsigned int i=0; i<n_eta_bins_; i++) {
 	      double val = ran_->Uniform(-0.001, 0.001);
@@ -164,10 +163,14 @@ public:
       }        
       n_dof_ = n_data_ - n_pars_;    
     }
-    else if(bias_== -1) { // data mode
+    else if(bias_== -1) { // Data mode
       // Read scales and masks per 4D bin from input file
       TFile* fin = TFile::Open(fname.c_str(), "READ");
-      TH1D* h_scales = (TH1D*)fin->Get("h_scales");
+      if(fin==0) {
+	      cout << "No data file found! Will quit" << endl;
+  	    return;
+      }
+      TH1D* h_scales = (TH1D*)fin->Get("h_scales"); // mass scale bias -> beta + 1.0
       TH1D* h_masks = (TH1D*)fin->Get("h_masks");
       assert( h_scales->GetXaxis()->GetNbins() == n_data_);
 
@@ -186,7 +189,7 @@ public:
       TH1D* h_A_vals = (TH1D*)fin->Get("h_A_vals_nom");
       TH1D* h_e_vals = (TH1D*)fin->Get("h_e_vals_nom");
       TH1D* h_M_vals = (TH1D*)fin->Get("h_M_vals_nom");
-      // Read the sum of pT corrections A,e or M obtained from all the previous iterations from massscales_data.cpp
+      // Read from massscales_data.cpp the sum of pT scale biases A,e or M obtained from all the previous iterations
       TH1D* h_A_vals_prevfit = (TH1D*)fin->Get("h_A_vals_prevfit");
       TH1D* h_e_vals_prevfit = (TH1D*)fin->Get("h_e_vals_prevfit");
       TH1D* h_M_vals_prevfit = (TH1D*)fin->Get("h_M_vals_prevfit");
@@ -238,13 +241,13 @@ public:
   
   ~TheoryFcn() { delete ran_;}
 
-  // In toy mode, function to generate scale^2 values from given AeM
+  // In toy mode, function to generate mass scale bias^2 values from given AeM
   void generate_data();
 
-  // Function to set the seed value
+  // Function to set the seed value for random numbers
   void set_seed(const int& seed){ ran_->SetSeed(seed);}
 
-  // Function to get external or internal true parameter values from index 
+  // Function to get external or internal true parameter values from index (for toys)
   double get_true_params(const unsigned int& i, const bool& external) {
     if(external)
       return x_vals_(i);
@@ -252,6 +255,7 @@ public:
       return (U_*x_vals_)(i);
   }
 
+  // Get the sum of pT scale biases A,e or M obtained from all the previous iterations
   double get_A_prevfit(const unsigned int& i) {
     return A_vals_prevfit_(i);
   }
@@ -269,6 +273,7 @@ public:
   double get_first_pt_edge(){ return pt_edges_.at(0) ;}
   double get_last_pt_edge(){ return pt_edges_.at(n_pt_bins_) ;} 
 
+  // Get the transformation of external to internal parameters
   double get_U(const unsigned int& i, const unsigned int& j) {
     return U_(i,j);
   }
@@ -276,7 +281,7 @@ public:
   virtual double Up() const {return errorDef_;}
   virtual void SetErrorDef(double def) {errorDef_ = def;}
 
-  // Function to be minimised from scale^2 values, errors and AeM parameters
+  // Function to be minimised from mass scale bias ^2 values, errors and pT scale biases parameters AeM
   virtual double operator()(const vector<double>&) const;
   // Function for analytical gradient of the function to be minimised
   virtual vector<double> Gradient(const vector<double>& ) const;
@@ -312,7 +317,7 @@ private:
   TRandom3* ran_;
 };
 
-// In toy mode, function to generate scale^2 values and errors from given AeM
+// In toy mode, function to generate mass scale bias ^2 values and errors from given pT scale bias AeM via Gaussian sampling
 void TheoryFcn::generate_data() {
   double chi2_start = 0.;
   unsigned int ibin = 0;
@@ -323,7 +328,7 @@ void TheoryFcn::generate_data() {
 	      for(unsigned int ipt_m = 0; ipt_m<n_pt_bins_; ipt_m++) {
 	        double k_m = kmean_vals_[ipt_m];
 
-	        // Draw error on scale^2 centered around ierr2_nom as function of eta
+	        // Draw error on mass scale bias ^2 centered around ierr2_nom as function of eta
 	        double ierr2_nom = 0.0001*(1+double(ieta_p)/n_eta_bins_)*(1+double(ieta_m)/n_eta_bins_);
 	        //*(2-0.1*double(ipt_p)/n_pt_bins_)*(2-0.1*double(ipt_m)/n_pt_bins_);
 	        double ierr2 = ran_->Gaus(ierr2_nom,  ierr2_nom*0.1);
@@ -352,37 +357,41 @@ void TheoryFcn::generate_data() {
   return;
 }
 
-// Define function to be minimised from scale^2 values and errors and AeM parameters -> will obtain pT corrections AeM
+// Define function to be minimised from mass scale bias ^2 values and errors and pT scale biases parameters AeM -> will obtain AeM
 double TheoryFcn::operator()(const vector<double>& par) const {
 
   double val = 0.0;
   const unsigned int npars = par.size();
 
+  // Keep track of 4D bins (the data points)
   unsigned int ibin = 0;
-  for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) {
+  // +ve muon term
+  for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) { // AeM are eta dependent
     double A_p = par[ieta_p];
     double e_p = par[ieta_p+n_eta_bins_];
     double M_p = par[ieta_p+2*n_eta_bins_]; 
     for(unsigned int ipt_p = 0; ipt_p < n_pt_bins_; ipt_p++) {   
       double k_p = kmean_vals_[ipt_p];
       double p_term = (1.0 + A_p - e_p*(k_p-kmean_val_)/kmean_val_ + M_p/k_p*kmean_val_ );
-      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) {
+      // -ve muon term
+      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) { // AeM are eta dependent
 	      double A_m = par[ieta_m];
 	      double e_m = par[ieta_m+n_eta_bins_];
 	      double M_m = par[ieta_m+2*n_eta_bins_];
 	      for(unsigned int ipt_m = 0; ipt_m < n_pt_bins_; ipt_m++) {	  
 	        double k_m = kmean_vals_[ipt_m];
 	        double m_term = (1.0 + A_m - e_m*(k_m-kmean_val_)/kmean_val_ - M_m/k_m*kmean_val_);
+          // Function to be minimized is ( chi2/ndf - 1 )
 	        double ival = (scales2_[ibin] - p_term*m_term)/scales2Err_[ibin];
 	        double ival2 = ival*ival;
-	        if(masks_[ibin])
+	        if(masks_[ibin]) // check if accepting or ignoring the 4D bin
 	          val += ival2;
 	        ibin++;
 	      }
       }
     }
   }
-  // Minimize ( chi2/ndf - 1 )
+  // Function to be minimized is ( chi2/ndf - 1 )
   val /= n_dof_;
   val -= 1.0;
   
@@ -394,20 +403,24 @@ vector<double> TheoryFcn::Gradient(const vector<double> &par ) const {
   //cout << "Using gradient" << endl; 
   vector<double> grad(par.size(), 0.0);
 
-  // Loop over all parameters
+  // Loop over all AeM parameters
   for(unsigned int ipar = 0; ipar < par.size(); ipar++) {
     unsigned int ieta     = ipar % n_eta_bins_;
-    unsigned int par_type = ipar / n_eta_bins_;    
+    unsigned int par_type = ipar / n_eta_bins_; // A, e or M    
     //cout << "ipar " << ipar << ": " << ieta << ", " << par_type << endl;
-    double grad_i = 0.0;    
-    unsigned int ibin = 0;
 
-    // Loop over 4D bin terms
-    for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) {
+    // Gradient of function to be minimized wrt to a given parameter in a given 4D bin
+    double grad_i = 0.0;    
+    // Keep track of 4D bins (the data points)
+    unsigned int ibin = 0;
+    
+    // For the given parameter, check all the 4D bins (data points)
+    // +ve muon term
+    for(unsigned int ieta_p = 0; ieta_p < n_eta_bins_; ieta_p++) { // AeM are eta dependent
       double A_p = par[ieta_p];
       double e_p = par[ieta_p+n_eta_bins_];
       double M_p = par[ieta_p+2*n_eta_bins_]; 
-      for(unsigned int ipt_p = 0; ipt_p < n_pt_bins_; ipt_p++) {   
+      for(unsigned int ipt_p = 0; ipt_p < n_pt_bins_; ipt_p++) { 
 	      double k_p = kmean_vals_[ipt_p];
 	      double p_term = 0.;
 	      if(ieta_p != ieta)
@@ -417,7 +430,8 @@ vector<double> TheoryFcn::Gradient(const vector<double> &par ) const {
 	        else if( par_type==1) p_term = -(k_p-kmean_val_)/kmean_val_;
 	        else                  p_term = 1./k_p*kmean_val_;
 	      }
-	      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) {
+        // -ve muon term
+	      for(unsigned int ieta_m = 0; ieta_m < n_eta_bins_; ieta_m++) { // AeM are eta dependent
 	        double A_m = par[ieta_m];
 	        double e_m = par[ieta_m+n_eta_bins_];
 	        double M_m = par[ieta_m+2*n_eta_bins_];
@@ -437,32 +451,33 @@ vector<double> TheoryFcn::Gradient(const vector<double> &par ) const {
 	            /scales2Err_[ibin]/scales2Err_[ibin];
 
 	          double term = 0.0;
-	          if(ieta_p==ieta || ieta_m==ieta) {
-	            if(ieta_p!=ieta_m) term = p_term*m_term;
-	            else {
-		            if(par_type==0)
+	          if(ieta_p==ieta || ieta_m==ieta) { // if this 4D bin contains the relevant parameter 
+	            if(ieta_p!=ieta_m) term = p_term*m_term; // if it contains it only in the +ve or -ve term
+	            else { // if it contains it in both the +ve and the -ve term
+		            if(par_type==0) // A
 		              term = 1.0*(1.0 + A_m - e_m*(k_m-kmean_val_)/kmean_val_ - M_m/k_m*kmean_val_) +
 		                (1.0 + A_p - e_p*(k_p-kmean_val_)/kmean_val_ + M_p/k_p*kmean_val_)*1.0;
-		            else if(par_type==1)
+		            else if(par_type==1) // e 
 		              term = -(k_p-kmean_val_)/kmean_val_ * (1.0 + A_m - e_m*(k_m-kmean_val_)/kmean_val_ - M_m/k_m*kmean_val_) -
 		                (1.0 + A_p - e_p*(k_p-kmean_val_)/kmean_val_ + M_p/k_p*kmean_val_) * (k_m-kmean_val_)/kmean_val_;
-		            else
+		            else // M
 		              term = 1.0/k_p*kmean_val_ * (1.0 + A_m - e_m*(k_m-kmean_val_)/kmean_val_ - M_m/k_m*kmean_val_) -
 		                (1.0 + A_p - e_p*(k_p-kmean_val_)/kmean_val_ + M_p/k_p*kmean_val_) * 1.0/k_m*kmean_val_;
 	            }
 	          }
 	          //cout << "ival " << ival << "," << term << endl; 
 	          double ig = ival*term;
+            // Function to be minimized is ( chi2/ndf - 1 )
 	          ig /= n_dof_;
 	          //cout << "ibin " << ibin << " += " << ig << endl;
-	          if(masks_[ibin]) grad_i += ig;
+	          if(masks_[ibin]) grad_i += ig; // check if accepting or ignoring the 4D bin
 	          ibin++;
 	        }
 	      }
       }
     }
     //cout << "\t" << ipar << ": " << grad_i << endl;
-    grad[ipar] = grad_i;
+    grad[ipar] = grad_i; 
   }
 
   return grad; 
@@ -487,7 +502,7 @@ int main(int argc, char* argv[]) {
 	    ("run",    value<std::string>()->default_value("closure"), "run of input data")
 	    ("bias",   value<int>()->default_value(0), "bias [-1 for data, >0 for toys: 1 for uniform random bias, 2 for eta dependent bias]")
 	    ("infile", value<std::string>()->default_value("massscales"), "type of input data")
-	    ("seed",   value<int>()->default_value(4357), "seed");
+	    ("seed",   value<int>()->default_value(4357), "seed for random toys with different AeM bias");
 
     store(parse_command_line(argc, argv, desc), vm);
     notify(vm);
@@ -523,29 +538,30 @@ int main(int argc, char* argv[]) {
   tree->Branch("hasAccurateCovar", &hasAccurateCovar, "hasAccurateCovar/I");
   tree->Branch("hasPosDefCovar", &hasPosDefCovar, "hasPosDefCovar/I");
 
-  // Initialize function to be minimized 
+  // Initialize function to be minimized ( chi2/ndf - 1 )
   int debug = 0;
   string infname = infile+"_"+tag+"_"+run+".root";
   TheoryFcn* fFCN = new TheoryFcn(debug, seed, bias, infname);  
   fFCN->SetErrorDef(1.0 / fFCN->get_n_dof());
   unsigned int n_parameters = fFCN->get_n_params();
+  // Get the transformation of external to internal parameters
   MatrixXd U(n_parameters,n_parameters);
   for (int i=0; i<n_parameters; i++) {
     for (int j=0; j<n_parameters; j++) {
       U(i,j) = fFCN->get_U(i,j);
     }
   }
-  MatrixXd Uinv = U.inverse();
+  MatrixXd Uinv = U.inverse(); // transformation of internal to external parameters
   
-  // Single vectors to store all AeM parameters
-  vector<double> tparIn0(n_parameters);  // internal, true
+  // Single vectors to store all pT scale bias parameters AeM
+  vector<double> tparIn0(n_parameters);  // internal, true (toys)
   vector<double> tparIn(n_parameters);   // internal, fitted
   vector<double> tparInErr(n_parameters);
-  vector<double> tparOut0(n_parameters); // external, true
+  vector<double> tparOut0(n_parameters); // external, true (toys)
   vector<double> tparOut(n_parameters);  // external, fitted
   vector<double> tparOutErr(n_parameters);
 
-  // Fit parameters branches 
+  // Fit parameters TTree branches 
   for (int i=0; i<n_parameters/3; i++){
     tree->Branch(Form("A%d",i),       &tparOut[i],    Form("A%d/D",i));
     tree->Branch(Form("A%d_true",i),  &tparOut0[i],   Form("A%d_true/D",i));
@@ -579,23 +595,23 @@ int main(int argc, char* argv[]) {
   TH1D* h_ein_vals_nom  = new TH1D("h_ein_vals_nom", "e/#bar{k} nominal", n_parameters/3, 0, n_parameters/3);
   TH1D* h_Min_vals_nom  = new TH1D("h_Min_vals_nom", "M#bar{k} nominal", n_parameters/3, 0, n_parameters/3);
 
-  // Save external and internal fitted parameters representing pT corrections A,e or M obtained in the current iteration   
+  // Save external and internal fitted parameters representing pT scale biases A,e or M obtained in the current iteration   
   TH1D* h_A_vals_fit  = new TH1D("h_A_vals_fit", "#hat{A}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_e_vals_fit  = new TH1D("h_e_vals_fit", "#hat{e}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_M_vals_fit  = new TH1D("h_M_vals_fit", "#hat{M}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_Ain_vals_fit  = new TH1D("h_Ain_vals_fit", "(#hat{A}-#hat{e}#bar{k})", n_parameters/3, 0, n_parameters/3);
-  TH1D* h_ein_vals_fit  = new TH1D("h_ein_vals_fit", "#hat{e}/#bar{k}", n_parameters/3, 0, n_parameters/3);
-  TH1D* h_Min_vals_fit  = new TH1D("h_Min_vals_fit", "#hat{M}#bar{k}", n_parameters/3, 0, n_parameters/3);
+  TH1D* h_ein_vals_fit  = new TH1D("h_ein_vals_fit", "#hat{e}#bar{k}", n_parameters/3, 0, n_parameters/3);
+  TH1D* h_Min_vals_fit  = new TH1D("h_Min_vals_fit", "#hat{M}/#bar{k}", n_parameters/3, 0, n_parameters/3);
   
-  // We will overwrite the _prevfit histograms to contain the sum of pT corrections A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
+  // We will overwrite the _prevfit histograms to contain the sum of pT scale biases A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
   TH1D* h_A_vals_prevfit  = new TH1D("h_A_vals_prevfit", "#hat{A}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_e_vals_prevfit  = new TH1D("h_e_vals_prevfit", "#hat{e}", n_parameters/3, 0, n_parameters/3);
   TH1D* h_M_vals_prevfit  = new TH1D("h_M_vals_prevfit", "#hat{M}", n_parameters/3, 0, n_parameters/3);
 
-  // Toy mode: scales from input AeM
+  // Toy mode: mass scale biases from input pT scale bias AeM
   TH2D* h_scales_nom_plus   = new TH2D("h_scales_nom_plus", "scales nominal plus; #eta bin", n_parameters/3, 0, n_parameters/3,
 				       50, fFCN->get_first_pt_edge(), fFCN->get_last_pt_edge() );
-  // Data mode: scales from the sum of pT corrections A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
+  // Data mode: scales from the sum of pT scale biases A,e or M obtained in all the previous iterations + the ones obtained in the current iteration
   TH2D* h_scales_fit_plus   = new TH2D("h_scales_fit_plus", "scales plus; #eta bin", n_parameters/3, 0, n_parameters/3,
 				       50, fFCN->get_first_pt_edge(), fFCN->get_last_pt_edge() );
   TH2D* h_scales_nom_minus  = new TH2D("h_scales_nom_minus", "scales nominal minus; #eta bin", n_parameters/3, 0, n_parameters/3,
@@ -608,7 +624,7 @@ int main(int argc, char* argv[]) {
   int verbosity = int(ntoys<2); 
   ROOT::Minuit2::MnPrint::SetGlobalLevel(verbosity);
   
-  if(bias<0) assert( ntoys == 1);
+  if(bias<0) assert( ntoys == 1); // use ntoys==1 for data
   for(unsigned int itoy=0; itoy<ntoys; itoy++) {
 
     if(itoy%10==0) cout << "Toy " << itoy << " / " << ntoys << endl;
@@ -725,28 +741,28 @@ int main(int argc, char* argv[]) {
         if(i<n_parameters/3) {
 	        h_A_vals_fit->SetBinContent(ip+1, x(i));
 	        h_A_vals_fit->SetBinError(ip+1, xErr(i));
-	        h_A_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true));
+	        h_A_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true)); // toys
 	        h_Ain_vals_fit->SetBinContent(ip+1, xin(i));
 	        h_Ain_vals_fit->SetBinError(ip+1, xinErr(i));
-	        h_Ain_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false));
+	        h_Ain_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false)); // toys
 	        h_A_vals_prevfit->SetBinContent(ip+1, fFCN->get_A_prevfit(ip) + x(i));
         }
         else if(i>=n_parameters/3 && i<2*n_parameters/3) {
 	        h_e_vals_fit->SetBinContent(ip+1, x(i));
 	        h_e_vals_fit->SetBinError(ip+1, xErr(i));
-	        h_e_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true));
+	        h_e_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true)); // toys
 	        h_ein_vals_fit->SetBinContent(ip+1, xin(i));
 	        h_ein_vals_fit->SetBinError(ip+1, xinErr(i));
-	        h_ein_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false));
+	        h_ein_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false)); // toys
 	        h_e_vals_prevfit->SetBinContent(ip+1, fFCN->get_e_prevfit(ip) + x(i));
         }
         else {
 	        h_M_vals_fit->SetBinContent(ip+1, x(i));
 	        h_M_vals_fit->SetBinError(ip+1, xErr(i));
-	        h_M_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true));
+	        h_M_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, true)); // toys
 	        h_Min_vals_fit->SetBinContent(ip+1, xin(i));
       	  h_Min_vals_fit->SetBinError(ip+1, xinErr(i));
-	        h_Min_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false));
+	        h_Min_vals_nom->SetBinContent(ip+1, fFCN->get_true_params(i, false)); // toys
 	        h_M_vals_prevfit->SetBinContent(ip+1, fFCN->get_M_prevfit(ip) + x(i));
         }  
       } 
@@ -815,6 +831,7 @@ int main(int argc, char* argv[]) {
   fout->cd();
   tree->Write();
 
+  // For toys, pull distributions of the fitted vs true AeM parameters
   TH1D* hpulls = new TH1D("hpulls", "", n_parameters, 0, n_parameters);
   TH1D* hsigma = new TH1D("hsigma", "", n_parameters, 0, n_parameters);
   for (int i=0; i<n_parameters; i++) {
