@@ -83,11 +83,12 @@ int main(int argc, char* argv[]) {
 	  ("tag",                value<std::string>()->default_value("closure"), "run type, type of data used")
 	  ("run",                value<std::string>()->default_value("closure"), "number of iteration")
 	  ("saveMassFitHistos",  bool_switch()->default_value(false), "save pre and postfit mass distribution in 4D bin")
-	  ("saveUnsmearedReco",  bool_switch()->default_value(false), "save distributions of mass and jacobian terms per event for reco without smearing")
+	  ("skipUnsmearedReco",  bool_switch()->default_value(true), "do not fill histograms of mass or jacobian weights per event for reco without smearing")
 	  ("firstIter",          value<int>()->default_value(-1), "firstIter (-1: fills data histos, 0: fills MC histos, 1(needs 0): fills jacobians, 2(needs -1,0,1): fits for scale/resolution bias)")
 	  ("lastIter",           value<int>()->default_value(-1), "lastIter  (-1: fills data histos, 0: fills MC histos, 1(needs 0): fills jacobians, 2(needs -1,0,1): fits for scale/resolution bias)")
-	  ("nRMSforGausFit",     value<float>()->default_value(-1.), "")
+	  ("nRMSforGausFit",     value<float>()->default_value(-1.), "number of RMS for Gaus mass difference fit")
 	  ("minNumMassBins",     value<int>()->default_value(4), "min number of mass bins for a histogram to be accepted")
+	  ("maxRMS",             value<float>()->default_value(-1.), "max RMS of Gaus mass difference fit for a 4D bin to be included in the mass fit")
 	  ("rebin",              value<int>()->default_value(2), "rebin before fit")
 	  ("fitWidth",           bool_switch()->default_value(false), "compute resolution bias")
 	  ("fitNorm",            bool_switch()->default_value(false), "compute difference in normalisation in 4D bin")
@@ -128,7 +129,7 @@ int main(int argc, char* argv[]) {
   int firstIter               = vm["firstIter"].as<int>();
   int lastIter                = vm["lastIter"].as<int>();
   bool saveMassFitHistos      = vm["saveMassFitHistos"].as<bool>();
-  bool saveUnsmearedReco      = vm["saveUnsmearedReco"].as<bool>();
+  bool skipUnsmearedReco      = vm["skipUnsmearedReco"].as<bool>();
   bool fitWidth               = vm["fitWidth"].as<bool>();
   bool fitNorm                = vm["fitNorm"].as<bool>();
   bool usePrevMassFit         = vm["usePrevMassFit"].as<bool>();
@@ -143,6 +144,7 @@ int main(int argc, char* argv[]) {
   std::string tagPrevResolFit = vm["tagPrevResolFit"].as<std::string>();
   std::string runPrevResolFit = vm["runPrevResolFit"].as<std::string>();
   bool scaleToData            = vm["scaleToData"].as<bool>();
+  float maxRMS                = vm["maxRMS"].as<float>();
   
   assert( firstIter>=-1 && lastIter<=2 && firstIter<lastIter );
   assert( y2016 || y2017 || y2018 );
@@ -177,6 +179,7 @@ int main(int argc, char* argv[]) {
   TH1F* h_A_vals_prevfit = new TH1F("h_A_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_e_vals_prevfit = new TH1F("h_e_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_M_vals_prevfit = new TH1F("h_M_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
+  // _prevfit histograms for the sum of the curvature resolution bias parameters c or d from all the previous iterations
   TH1F* h_c_vals_prevfit = new TH1F("h_c_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   TH1F* h_d_vals_prevfit = new TH1F("h_d_vals_prevfit", "", n_eta_bins, 0, n_eta_bins );
   
@@ -204,12 +207,15 @@ int main(int argc, char* argv[]) {
 	d_vals_fit(i) = 0.0;
   }           
   
-  // Keep track of MC before(reco) and after(smear0) applying curvature corrections to get closer to data
+  // Option to keep track of MC and jacobians before(reco) and after(smear0) applying curvature corrections to get closer to data
+  // If skipUnsmearedReco == false, we will save mass and jacobian histograms for both reco and smear0 in the dataframe
+  // In the scale fit, only smear0 jacobians are used
   std::vector<string> recos = {"reco", "smear0"};
 
   // Map to histograms containing information for each 4D bin
   std::map<string, TH1D*> h_map;
   for(unsigned int r = 0; r<recos.size(); r++) {
+	if(skipUnsmearedReco && recos[r]=="reco") continue;
 	// Gaussian mean and rms of the mass - gen mass distribution in a 4D bin
     h_map.insert( std::make_pair<string, TH1D* >("mean_"+recos[r], 0 ) );
     h_map.insert( std::make_pair<string, TH1D* >("rms_"+recos[r],  0 ) );
@@ -220,6 +226,7 @@ int main(int argc, char* argv[]) {
   // Map to 2D histograms for Crystal Ball jacobians
   std::map<string, TH2D*> h_jac_map;
   for(unsigned int r = 0; r<recos.size(); r++) {
+	if(skipUnsmearedReco && recos[r]=="reco") continue;
 	// Crystal Ball jacobian event weights in a 4D bin, in a mass - gen mass bin
     h_jac_map.insert( std::make_pair<string, TH2D* >("jscale_cb_per_evt_"+recos[r], 0 ) );
     h_jac_map.insert( std::make_pair<string, TH2D* >("jwidth_cb_per_evt_"+recos[r], 0 ) );
@@ -277,7 +284,8 @@ int main(int argc, char* argv[]) {
   }  
 
   // Define a single output file, we will write to and read from it at the different iterations 
-  TFile* fout = TFile::Open(("./massscales_"+tag+"_"+run+".root").c_str(), "RECREATE");
+  // If firstIter = 2, update an existing output file with iter -1,0 and 1 to (over)write iter 2 (the mass fit results)
+  TFile* fout = TFile::Open(("./massscales_"+tag+"_"+run+".root").c_str(), firstIter<2 ? "RECREATE" : "UPDATE");
   
   // iter -1 -> data mass histos
   // iter  0 -> MC mass histos + calculation of jacobian terms per event
@@ -475,7 +483,8 @@ int main(int argc, char* argv[]) {
 
 	      if(ietaP<n_eta_bins && ietaM<n_eta_bins) {
             // Correct the MC curvature with the curvature scale biases derived in previous iterations (which are respectively equal to (-1)* sum of the pT scale biases from previous iterations)
-	        scale_smear0P = (1. + A_vals_fit(ietaP) - e_vals_fit(ietaP)*kmuP + M_vals_fit(ietaP)/kmuP);
+	        // if usePrevMassFit is false, A,e,M are 0
+			scale_smear0P = (1. + A_vals_fit(ietaP) - e_vals_fit(ietaP)*kmuP + M_vals_fit(ietaP)/kmuP);
 	        scale_smear0M = (1. + A_vals_fit(ietaM) - e_vals_fit(ietaM)*kmuM - M_vals_fit(ietaM)/kmuM);
 	        //cout << "smear0:" << scale_smear0P << ": " << 1 << " + " << A_vals_fit(ietaP) << " - " << e_vals_fit(ietaP)*kmuP << " + " << M_vals_fit(ietaP)/kmuP << endl;
 	        if(usePrevResolFit) {
@@ -595,6 +604,8 @@ int main(int argc, char* argv[]) {
 	   "GenPart_phi", "GenPart_mass", "Muon_ksmear"} ));
 
       for(unsigned int r = 0 ; r<recos.size(); r++) {
+		if(skipUnsmearedReco && recos[r]=="reco") continue;
+
 	    unsigned int mpos = idx_map.at(recos[r]);
 
 	    dlast = std::make_unique<RNode>(dlast->Define(TString( (recos[r]+"_m").c_str() ), [mpos](RVecF masses)
@@ -630,6 +641,13 @@ int main(int argc, char* argv[]) {
 	
 	    float gm  = masses.at(0);
 	    for(unsigned int r = 0 ; r<recos.size(); r++) {
+			if(skipUnsmearedReco && recos[r]=="reco") {
+				out.emplace_back(0.0);
+	            out.emplace_back(0.0);
+	            out.emplace_back(0.0);
+	            out.emplace_back(0.0);
+				continue;
+			}
 	      unsigned int rpos = idx_map.at(recos[r]);
 		  // Gaussian mean and rms of the mass - gen mass distribution in a 4D bin
 	      TH1D* h_mean = h_map.at("mean_"+recos[r]);
@@ -661,6 +679,8 @@ int main(int argc, char* argv[]) {
       }, {"masses", "indexes"} ));
 
       for(unsigned int r = 0 ; r<recos.size(); r++) {
+		if(skipUnsmearedReco && recos[r]=="reco") continue;
+
         unsigned int jpos = (idx_map.at(recos[r])-1)*4;
 
 	    dlast = std::make_unique<RNode>(dlast->Define( TString((recos[r]+"_jscale_weight").c_str()), [jpos](RVecF weights_jac, float weight) -> float
@@ -779,6 +799,7 @@ int main(int argc, char* argv[]) {
       //df_histos1D.emplace_back(dlast->Histo1D({"h_reco_m", "nominal", x_nbins, x_low, x_high}, "reco_m", "weight"));
       //df_histos1D.emplace_back(dlast->Histo1D({"h_smear_m", "nominal", x_nbins, x_low, x_high}, "smear0_m", "weight"));
       for(unsigned int r = 0 ; r<recos.size(); r++) {
+		if(skipUnsmearedReco && recos[r]=="reco") continue;
 		// x-axis: 4D bin index, y-axis: MC mass, weight = MC weight
         df_histos2D.emplace_back(dlast->Histo2D({ "h_"+TString(recos[r].c_str())+"_bin_m",    "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high},   "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", "weight" ));
     	// x-axis: 4D bin index, y-axis: MC mass - gen mass, weight = MC weight
@@ -792,7 +813,7 @@ int main(int argc, char* argv[]) {
     }
     else if(iter==1) { // Book jac histograms only for smear0
       for(unsigned int r = 0 ; r<recos.size(); r++){
-	    if(recos[r]!="smear0") continue;
+	    if(skipUnsmearedReco && recos[r]=="reco") continue;
 		// x-axis: 4D bin index, y-axis: MC mass, weight = gaussian scale jacobian event weight
     	df_histos2D.emplace_back(dlast->Histo2D({"h_"+TString(recos[r].c_str())+"_bin_jac_scale", "nominal", n_bins, 0, double(n_bins), x_nbins, x_low, x_high}, "index_"+TString(recos[r].c_str()), TString(recos[r].c_str())+"_m", TString(recos[r].c_str())+"_jscale_weight"));
     	// x-axis: 4D bin index, y-axis: MC mass, weight = gaussian width jacobian event weight
@@ -854,6 +875,8 @@ int main(int argc, char* argv[]) {
       gErrorIgnoreLevel = 6001;
 
       for(unsigned int r = 0 ; r<recos.size(); r++) {
+
+		if(skipUnsmearedReco && recos[r]=="reco") continue;
 	
 	    TH2D* h_reco_dm = (TH2D*)fout->Get(TString( ("h_"+recos[r]+"_bin_dm").c_str()) );
 	    TH2D* h_reco_m  = (TH2D*)fout->Get(TString( ("h_"+recos[r]+"_bin_m").c_str()) );
@@ -900,6 +923,7 @@ int main(int argc, char* argv[]) {
 	        meanerr_i = gf->GetParError(1);
 	        rms_i     = TMath::Abs(gf->GetParameter(2));
 	        rmserr_i  = gf->GetParError(2);
+			if(maxRMS>0. && rms_i>maxRMS) h_map.at("mask_"+recos[r])->SetBinContent(i+1, 0);
 	        //cout << "Fit " << mean_i << endl;
 	        delete gf;
             
@@ -952,7 +976,9 @@ int main(int argc, char* argv[]) {
       
       fout->cd();
     
-      for(unsigned int r = 0 ; r<recos.size(); r++) {	  
+      for(unsigned int r = 0 ; r<recos.size(); r++) {	 
+		if(skipUnsmearedReco && recos[r]=="reco") continue;
+
 	    h_map["mean_"+recos[r]]->Write();
 	    h_map["rms_"+recos[r]]->Write();
 	    h_map["mask_"+recos[r]]->Write();
@@ -1066,7 +1092,7 @@ int main(int argc, char* argv[]) {
 	        double mcErr_im = h_nom_i->GetBinError(im+1);
 	        inv_V(bin_counter,bin_counter) = lumi>0. ?
 	        1./(y(bin_counter)  + mcErr_im*mcErr_im ) :
-	        1/(2*mcErr_im*mcErr_im);
+	        1./(2*mcErr_im*mcErr_im);
 	        //cout << TMath::Sqrt(y(bin_counter)) << " (+) " << h_nom_i->GetBinError(im+1) << endl;
 	        inv_sqrtV(bin_counter,bin_counter) = TMath::Sqrt( inv_V(bin_counter,bin_counter) );
 	        bin_counter++;

@@ -1,3 +1,9 @@
+# Runs all the steps for toys
+# Loop over different toys: 
+      # at Iter0: ./massscales ./massfit ./resolfit
+      # for niter times: ./massscales (command updated to use results of the previous iteration) ./massfit ./resolfit  
+# Authors: Cristina Alexe, Lorenzo Bianchini
+
 import argparse
 import os
 import sys
@@ -10,17 +16,17 @@ parser = argparse.ArgumentParser(description='run')
 
 parser.add_argument('--none', action='store_true'  , help = 'none')
 parser.add_argument('--dryrun', action='store_true'  , help = 'dry run')
-parser.add_argument('--ntoys', dest = 'ntoys'  , type = int,  default=1, help='')
-parser.add_argument('--tag',   default='SmearRealistic' , help = 'algo')
-parser.add_argument('--niter', dest = 'niter'  , type = int,  default=1, help='')
-parser.add_argument('--forceIter', dest = 'forceIter'  , type = int,  default=-1, help='')
+parser.add_argument('--ntoys', dest = 'ntoys'  , type = int,  default=1, help='number of toys')
+parser.add_argument('--tag',   default='SmearRealistic' , help = 'type of toy used')
+parser.add_argument('--niter', dest = 'niter'  , type = int,  default=1, help='number of iterations after the 0th')
+parser.add_argument('--forceIter', dest = 'forceIter'  , type = int,  default=-1, help='will only do a specific iteration and skip the rest')
 
 args = parser.parse_args()
 
-def loop_onetoy(seed, toy):    
+def loop_one_toy(seed, toy):    
 
     tag = args.tag+'_toy'+str(toy)
-    cmd_histo_iter0 = './massscales --lumi=-1 --firstIter=0 --lastIter=2 --skipReco '+\
+    cmd_histo_iter0 = './massscales --lumi=-1 --firstIter=0 --lastIter=2 '+\
         ' --tag='+tag+' '+\
         ' --run=Iter0 '+\
         ' --nRMSforGausFit=-1.0 '+\
@@ -54,12 +60,12 @@ def loop_onetoy(seed, toy):
         if args.forceIter>0 and iter!=args.forceIter:
             continue
         cmd_histo_iteri = cmd_histo_iter0.replace('--run=Iter0', '--run=Iter'+str(iter))
-        cmd_histo_iteri += ' --usePrevFit '+\
-            ' --tagPrevFit='+tag+' '+\
-            ' --runPrevFit=Iter'+str(iter-1)+' '
-        cmd_histo_iteri += ' --useSmearFit '+\
-            ' --tagSmearFit='+tag+' '+\
-            ' --runSmearFit=Iter'+str(iter-1)+' '
+        cmd_histo_iteri += ' --usePrevMassFit '+\
+            ' --tagPrevMassFit='+tag+' '+\
+            ' --runPrevMassFit=Iter'+str(iter-1)+' '
+        cmd_histo_iteri += ' --usePrevResolFit '+\
+            ' --tagPrevResolFit='+tag+' '+\
+            ' --runPrevResolFit=Iter'+str(iter-1)+' '
         print(cmd_histo_iteri)
         if not args.dryrun:
             os.system(cmd_histo_iteri)
@@ -77,10 +83,13 @@ def loop_onetoy(seed, toy):
 if __name__ == '__main__':
     iseed = 4357
     start = time.time()
+    # Run over many toys
     for itoy in range(0, args.ntoys):
-        iseed += itoy*2
+        # The seed must increase each time by the total_number_of_threads*10 + 2 + 1
+        iseed += itoy*1283
         print('Running toy with seed '+str(iseed))
-        loop_onetoy(seed=iseed,toy=itoy)
+        loop_one_toy(seed=iseed,toy=itoy)
+    # Sum the massfit histograms and merge massfit TTrees from all toys given the same Iter and write them in a single file  
     if args.ntoys>1:
         for iter in range(0, args.niter+1):
             if args.forceIter>0 and iter!=args.forceIter:

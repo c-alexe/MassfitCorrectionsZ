@@ -260,7 +260,21 @@ int main(){
     delete h;
     delete hm;
   }
+  
+  /*
+  RDataFrame df("tree", "cb.root");
+  auto h_edm = df.Histo1D({"edm", "edm", 100, -1, 20},"edm");
+  auto h_status = df.Histo1D({"status", "status", 20, -10, 10},"status");
+  auto h_flag = df.Histo1D({"flag", "flag", 4, 0, 4},"flag");
+  
+  std::unique_ptr<TFile> fout( TFile::Open("cb_tree_hist.root", "RECREATE") ); 
+  h_edm->Write();
+  h_status->Write();
+  h_flag->Write();
+  fout->Close();
 
+  */ 
+  
   fout->cd();
   tree->Write();
   fout->Close();
