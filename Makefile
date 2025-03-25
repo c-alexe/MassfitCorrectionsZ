@@ -10,7 +10,7 @@ all:
 	$(info, "--- Full compilation --- ")	
 	$(info, "-> if you want just to recompile something use 'make fast' ")	
 	$(info, "------------------------ ")	
-	$(MAKE) massfit resolfit massscales_data
+	$(MAKE) massfit resolfit massscales_data massscales
 
 massfit: massfit.cpp
 	$(GCC) $(CXXFLAGS) -o $(BINDIR)/massfit massfit.cpp  
@@ -19,4 +19,7 @@ resolfit: resolfit.cpp
 	$(GCC) $(CXXFLAGS) -o $(BINDIR)/resolfit resolfit.cpp  
 
 massscales_data: massscales_data.cpp
-	$(GCC) $(CXXFLAGS) -o $(BINDIR)/massscales_data massscales_data.cpp  
+	$(GCC) $(CXXFLAGS) -o $(BINDIR)/massscales_data massscales_data.cpp
+
+massscales: massscales.cpp
+	$(GCC) $(CXXFLAGS) -o $(BINDIR)/massscales massscales.cpp

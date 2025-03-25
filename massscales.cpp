@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
 	    ("usePrevResolFit",    bool_switch()->default_value(false), "use previous resolution fit")
 	    ("tagPrevResolFit",    value<std::string>()->default_value("closure"), "run type, type of toy used")
 	    ("runPrevResolFit",    value<std::string>()->default_value("closure"), "number of iteration")
-	    ("useMCasData",        bool_switch()->default_value(false), "use MC as data")
+	    ("useMCasData",        bool_switch()->default_value(false), "use reco as MC and biased smeared reco as pseudodata")
 	    ("seed",               value<int>()->default_value(4357), "seed for random numbers");
 
     store(parse_command_line(argc, argv, desc), vm);
@@ -246,7 +246,7 @@ int main(int argc, char* argv[]) {
     histohitres = (TH1D*)faux->Get("histohitres");
   } else {
     cout << "No nominal resolution file found! Will quit" << endl;
-    return;
+    return 0;
   }
 
   auto resolution = [histobudget, histohitres](float k, float eta, float bias) -> float
@@ -282,7 +282,7 @@ int main(int argc, char* argv[]) {
 	      A_vals_fit(i) = -h_A_vals_prevfit_in->GetBinContent(i+1);
 	      e_vals_fit(i) = -h_e_vals_prevfit_in->GetBinContent(i+1);
 	      M_vals_fit(i) = -h_M_vals_prevfit_in->GetBinContent(i+1);
-	      // Update the nom histograms
+	      // Update nom histos: subtract from the input curvature scale bias parameters A/e/M the sum of the curvature scale biases from all the previous iterations
 	      h_A_vals_nom->SetBinContent(i+1, h_A_vals_nom->GetBinContent(i+1) - A_vals_fit(i) );
 	      h_e_vals_nom->SetBinContent(i+1, h_e_vals_nom->GetBinContent(i+1) - e_vals_fit(i) );
 	      h_M_vals_nom->SetBinContent(i+1, h_M_vals_nom->GetBinContent(i+1) - M_vals_fit(i) );
@@ -348,6 +348,8 @@ int main(int argc, char* argv[]) {
 
     // Define vector of different TRandom variables to be used by different threads
     unsigned int nslots = d.GetNSlots();
+    if(nslots>384) cout<<"WARNING: check seed increment for toys in run_massloop.py, current implementation for 384 threads" << endl;
+    
     std::vector<TRandom3*> rans = {};
     for(unsigned int i = 0; i < nslots; i++){
       rans.emplace_back( new TRandom3(seed + i*10 + iter) );
@@ -449,13 +451,13 @@ int main(int argc, char* argv[]) {
 	      if(ietaP<n_eta_bins && ietaM<n_eta_bins) {
           // Correct the MC curvature with the curvature scale biases derived in previous iterations (which are respectively equal to (-1)* sum of the pT scale biases from previous iterations)
 	        // if usePrevMassFit is false, A,e,M are 0
-          scale_smear0P = (1. + A_vals_fit(ietaP) + e_vals_fit(ietaP)*kmuP - M_vals_fit(ietaP)/kmuP);
-	        scale_smear0M = (1. + A_vals_fit(ietaM) + e_vals_fit(ietaM)*kmuM + M_vals_fit(ietaM)/kmuM);
+          scale_smear0P = (1. + A_vals_fit(ietaP) - e_vals_fit(ietaP)*kmuP + M_vals_fit(ietaP)/kmuP);
+	        scale_smear0M = (1. + A_vals_fit(ietaM) - e_vals_fit(ietaM)*kmuM - M_vals_fit(ietaM)/kmuM);
           // Generate pseudodata curvature as gen k smeared according to the input curvature biases A,e,M
-	        scale_smear1P = (1. + A_vals_nom(ietaP) + e_vals_nom(ietaP)*kmuP - M_vals_nom(ietaP)/kmuP);
-	        scale_smear1M = (1. + A_vals_nom(ietaM) + e_vals_nom(ietaM)*kmuM + M_vals_nom(ietaM)/kmuM);
-	        //cout << "smear0:" << scale_smear0P << ": " << 1 << " + " << A_vals_fit(ietaP) << " + " << e_vals_fit(ietaP)*kmuP << " - " << M_vals_fit(ietaP)/kmuP << endl;
-	        //cout << "smear1:" << scale_smear1P << ": " << 1 << " + " << A_vals_nom(ietaP) << " + " << e_vals_nom(ietaP)*kmuP << " - " << M_vals_nom(ietaP)/kmuP << endl;
+	        scale_smear1P = (1. + A_vals_nom(ietaP) - e_vals_nom(ietaP)*kmuP + M_vals_nom(ietaP)/kmuP);
+	        scale_smear1M = (1. + A_vals_nom(ietaM) - e_vals_nom(ietaM)*kmuM - M_vals_nom(ietaM)/kmuM);
+	        //cout << "smear0:" << scale_smear0P << ": " << 1 << " + " << A_vals_fit(ietaP) << " - " << e_vals_fit(ietaP)*kmuP << " + " << M_vals_fit(ietaP)/kmuP << endl;
+	        //cout << "smear1:" << scale_smear1P << ": " << 1 << " + " << A_vals_nom(ietaP) << " - " << e_vals_nom(ietaP)*kmuP << " + " << M_vals_nom(ietaP)/kmuP << endl;
 
 	        if(usePrevResolFit) {
             // Correct the MC curvature with the resolution biases derived in previous iterations (which are respectively equal to the sum of the resolution biases from previous iterations)
@@ -472,10 +474,10 @@ int main(int argc, char* argv[]) {
 	      float resol1M = resolution(kmuM, gmuM.Eta(), biasResolution);
 
 	      if(useMCasData) {
-          //smear0 
+          //smear0 -> used as MC
 	        out.emplace_back( (1./gmuP.Pt() + (1./muP.Pt() - 1./gmuP.Pt())*(1.0 + resol_smear0P))*scale_smear0P  );
 	        out.emplace_back( (1./gmuM.Pt() + (1./muM.Pt() - 1./gmuM.Pt())*(1.0 + resol_smear0M))*scale_smear0M  );
-	        //smear1 
+	        //smear1 -> used as pseudodata
           out.emplace_back( (1./gmuP.Pt() + (1./muP.Pt() - 1./gmuP.Pt())*(1.0 + biasResolution))*scale_smear1P  );
 	        out.emplace_back( (1./gmuM.Pt() + (1./muM.Pt() - 1./gmuM.Pt())*(1.0 + biasResolution))*scale_smear1M  );
 	      } else {
@@ -627,7 +629,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Define jacobian weights per event
-    dlast = std::make_unique<RNode>(dlast->Define("weights_jac", [n_bins,recos,h_map,idx_map](RVecF masses, RVecUI indexes) -> RVecF
+    dlast = std::make_unique<RNode>(dlast->Define("weights_jac", [skipUnsmearedReco,n_bins,recos,h_map,idx_map](RVecF masses, RVecUI indexes) -> RVecF
     {
       RVecF out;
       if(masses.size()==0) {
@@ -819,7 +821,7 @@ int main(int argc, char* argv[]) {
     }
 
     if(iter==2) {
-      if(saveMassFitHistos &&GetDirectory("postfit")==0) fout->mkdir("postfit");
+      if(saveMassFitHistos && fout->GetDirectory("postfit")==0) fout->mkdir("postfit");
       
       // Make tree with quantities relevant to the fit and the results
       TTree* treescales = new TTree("treescales","treescales");

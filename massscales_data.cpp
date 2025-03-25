@@ -626,7 +626,7 @@ int main(int argc, char* argv[]) {
       }
       
       // Define jacobian weights per event
-      dlast = std::make_unique<RNode>(dlast->Define("weights_jac", [n_bins,recos,h_map,h_jac_map,idx_map](RVecF masses, RVecUI indexes) -> RVecF
+      dlast = std::make_unique<RNode>(dlast->Define("weights_jac", [skipUnsmearedReco,n_bins,recos,h_map,h_jac_map,idx_map](RVecF masses, RVecUI indexes) -> RVecF
 	  {
 	    RVecF out;
 	    if(masses.size()==0) {

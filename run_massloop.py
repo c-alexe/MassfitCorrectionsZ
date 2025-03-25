@@ -86,7 +86,7 @@ if __name__ == '__main__':
     # Run over many toys
     for itoy in range(0, args.ntoys):
         # The seed must increase each time by the total_number_of_threads*10 + 2 + 1
-        iseed += itoy*1283
+        iseed += itoy*3843
         print('Running toy with seed '+str(iseed))
         loop_one_toy(seed=iseed,toy=itoy)
     # Sum the massfit histograms and merge massfit TTrees from all toys given the same Iter and write them in a single file  
