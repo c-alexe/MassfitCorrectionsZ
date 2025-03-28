@@ -45,7 +45,7 @@ using ROOT::RDF::RNode;
 
 using namespace boost::program_options;
 
-constexpr double lumiMC = 3.33369e+08/2001.9e+03;
+constexpr double lumiMC = 3.33369e+08/2001.9e+03; // fb^-1 
   
 int main(int argc, char* argv[]) {
 
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
 	    ("help,h", "Help screen")
 	    ("minNumEvents",       value<int>()->default_value(100), "min number of events for a histogram to be accepted")
 	    ("minNumEventsPerBin", value<int>()->default_value(10), "min number of events for a bin of a histogram to be accepted")
-	    ("lumi",               value<float>()->default_value(16.1), "number of events in data")
+	    ("lumi",               value<float>()->default_value(0.), "luminosity in data in fb^1")
 	    ("tag",                value<std::string>()->default_value("closure"), "run type, type of toy used")
 	    ("run",                value<std::string>()->default_value("closure"), "number of iteration")
 	    ("skipUnsmearedReco",  bool_switch()->default_value(true), "do not fill histograms of mass or jacobian weights per event for reco without smearing")
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
 	    ("nRMSforGausFit",     value<float>()->default_value(-1.), "number of RMS for Gaus mass difference fit")
 	    ("minNumMassBins",     value<int>()->default_value(4), "min number of mass bins for a histogram to be accepted")
 	    ("maxRMS",             value<float>()->default_value(-1.), "max RMS of Gaus mass difference fit for a 4D bin to be included in the mass fit")
-	    ("rebin",              value<int>()->default_value(2), "rebin before fit")
+	    ("rebin",              value<int>()->default_value(2), "rebin 4D bin histograms before scale fit")
 	    ("fitWidth",           bool_switch()->default_value(false), "compute resolution bias")
 	    ("fitNorm",            bool_switch()->default_value(false), "compute difference in normalisation in 4D bin")
 	    ("usePrevMassFit",     bool_switch()->default_value(false), "use previous mass fit")
@@ -718,7 +718,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Writing histos..." << std::endl;
     
     // Scale MC to luminosity in data
-    double sf = lumi>0. ? lumi/lumiMC : 1.0; //double(lumi)/double(minNumEvents);
+    double sf = lumi>0. ? lumi/lumiMC : 1.0; 
     
     for(auto h : histos1D) {
       h->Scale(sf);

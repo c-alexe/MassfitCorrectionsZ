@@ -34,7 +34,6 @@ def loop_one():
         ' --rebin=2 '+\
         ' --fitNorm --fitWidth '+\
         '  --y2016 --scaleToData '
-    # --lumi
     if not args.forceIter>0:
         print(cmd_histo_iter0)
     if not (args.dryrun or args.forceIter>0):

@@ -641,8 +641,10 @@ int main(int argc, char* argv[]) {
     for (int i=0; i<n_parameters/3; i++) upar.Add(Form("e%d",i), start, par_error);
     for (int i=0; i<n_parameters/3; i++) upar.Add(Form("M%d",i), start, par_error);      
 
+    MnStrategy strat(1);
+
     // Minimize
-    MnMigrad migrad(*fFCN, upar, 1);    
+    MnMigrad migrad(*fFCN, upar, strat);    
     if(itoy<1) cout << "\tMigrad..." << endl;
     FunctionMinimum min = migrad(maxfcn, tolerance);
 

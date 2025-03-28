@@ -61,6 +61,12 @@ using ROOT::RDF::RNode;
 
 using namespace boost::program_options;
 
+//fb^-1
+constexpr double lumiData2016 = 16.811; 
+constexpr double lumiData2017 = 41.556;
+constexpr double lumiData2018 = 59.688;
+
+// with cross sections in fb at sqrt(s)=13Tev
 constexpr double lumiMC2016 = 3.33369e+08/2001.9e+03;
 constexpr double lumiMC2017 = 4.9803e+07/2001.9e+03;
 constexpr double lumiMC2018 = 6.84093e+07/2001.9e+03;
@@ -79,7 +85,6 @@ int main(int argc, char* argv[]) {
 	  ("help,h", "Help screen")
 	  ("minNumEvents",       value<int>()->default_value(100), "min number of events for a histogram to be accepted")
 	  ("minNumEventsPerBin", value<int>()->default_value(10), "min number of events for a bin of a histogram to be accepted")
-	  ("lumi",               value<float>()->default_value(16.1), "number of events in data")
 	  ("tag",                value<std::string>()->default_value("closure"), "run type, type of data used")
 	  ("run",                value<std::string>()->default_value("closure"), "number of iteration")
 	  ("saveMassFitHistos",  bool_switch()->default_value(false), "save pre and postfit mass distribution in 4D bin")
@@ -89,7 +94,7 @@ int main(int argc, char* argv[]) {
 	  ("nRMSforGausFit",     value<float>()->default_value(-1.), "number of RMS for Gaus mass difference fit")
 	  ("minNumMassBins",     value<int>()->default_value(4), "min number of mass bins for a histogram to be accepted")
 	  ("maxRMS",             value<float>()->default_value(-1.), "max RMS of Gaus mass difference fit for a 4D bin to be included in the mass fit")
-	  ("rebin",              value<int>()->default_value(2), "rebin before fit")
+	  ("rebin",              value<int>()->default_value(1), "rebin 4D bin histograms before scale fit")
 	  ("fitWidth",           bool_switch()->default_value(false), "compute resolution bias")
 	  ("fitNorm",            bool_switch()->default_value(false), "compute difference in normalisation in 4D bin")
 	  ("usePrevMassFit",     bool_switch()->default_value(false), "use previous mass fit")
@@ -119,7 +124,6 @@ int main(int argc, char* argv[]) {
   }
   
   int minNumEvents            = vm["minNumEvents"].as<int>();
-  float lumi                  = vm["lumi"].as<float>();
   float nRMSforGausFit        = vm["nRMSforGausFit"].as<float>();
   std::string tag             = vm["tag"].as<std::string>();
   std::string run             = vm["run"].as<std::string>();
@@ -146,8 +150,12 @@ int main(int argc, char* argv[]) {
   bool scaleToData            = vm["scaleToData"].as<bool>();
   float maxRMS                = vm["maxRMS"].as<float>();
   
-  assert( firstIter>=-1 && lastIter<=2 && firstIter<lastIter );
+  assert( firstIter>=-1 && lastIter<=2 && firstIter<=lastIter );
   assert( y2016 || y2017 || y2018 );
+
+  double lumi = lumiData2016;
+  if(y2017)      lumi = lumiData2017;
+  else if(y2018) lumi = lumiData2018; 
 
   vector<float> pt_edges  = {25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0}; 
   vector<float> eta_edges = {-2.4, -2.2, -2.0, -1.8, -1.6, -1.4, -1.2, -1.0, -0.8, -0.6, -0.4, -0.2, 0.0,
@@ -401,6 +409,8 @@ int main(int argc, char* argv[]) {
 	// Define dataframe for the input files relevant to the current iteration 
     ROOT::RDataFrame d( "Events", in_files );
     auto dlast = std::make_unique<RNode>(d);
+	double number_input_events = *(dlast->Count());  
+    std::cout << " Input file read. Initial event count is " << number_input_events << std::endl;
         
     if(iter>=0) { // MC
 
