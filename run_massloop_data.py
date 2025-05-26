@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description='run')
 
 parser.add_argument('--none', action='store_true'  , help = 'none')
 parser.add_argument('--dryrun', action='store_true'  , help = 'dry run')
-parser.add_argument('--tag',   default='PostVFP' , help = 'type of data used')
+parser.add_argument('--tag',   default='2018' , help = 'type of data used')
 parser.add_argument('--niter', dest = 'niter'  , type = int,  default=1, help='number of iterations after the 0th')
 parser.add_argument('--forceIter', dest = 'forceIter'  , type = int,  default=-1, help='will only do a specific iteration and skip the rest')
 
@@ -33,7 +33,7 @@ def loop_one():
         ' --minNumMassBins=4 '+\
         ' --rebin=2 '+\
         ' --fitNorm --fitWidth '+\
-        '  --y2016 --scaleToData '
+        '  --y2018 --scaleToData '
     if not args.forceIter>0:
         print(cmd_histo_iter0)
     if not (args.dryrun or args.forceIter>0):

@@ -46,7 +46,7 @@ class TheoryFcn : public FCNGradientBase {
 //class TheoryFcn : public FCNBase {
 
 public:
-  TheoryFcn(const int& debug, const int& seed, const int& bias, string fname, double maxSigmaErr)
+  TheoryFcn(const int& debug, const int& seed, const int& bias, string fname, double maxSigmaErr, const string tag)
     : errorDef_(1.0), debug_(debug), seed_(seed), bias_(bias), maxSigmaErr_(maxSigmaErr)
   {
 
@@ -185,10 +185,10 @@ public:
       fin->Close();
 
       // Work out nominal (pT resolution divided by pT)^2 , as a function of eta and pT
-      TFile* faux = TFile::Open("./root/coefficients2016ptfrom20forscaleptfrom20to70forres.root", "READ");
+      TFile* faux = TFile::Open(("./root/nominal_resolution_coefficients_"+tag+".root").c_str(), "READ");
       if(faux!=0) {
-	      TH1D* histobudget = (TH1D*)faux->Get("histobudget");
-	      TH1D* histohitres = (TH1D*)faux->Get("histohitres");
+	      TH1D* histobudget = (TH1D*)faux->Get("resa");
+	      TH1D* histohitres = (TH1D*)faux->Get("resc");
 	      for(unsigned int ieta=0; ieta<n_eta_bins_; ieta++) {
 	        double eta = 0.5*(eta_edges_[ieta]+eta_edges_[ieta+1]);
  	        int eta_bin = histobudget->FindBin(eta);
@@ -513,7 +513,7 @@ int main(int argc, char* argv[]) {
   // Initialize function to be minimized ( chi2/ndf - 1 )
   int debug = 0;
   string infname = infile+"_"+tag+"_"+run+".root";
-  TheoryFcn* fFCN = new TheoryFcn(debug, seed, bias, infname, maxSigmaErr);  
+  TheoryFcn* fFCN = new TheoryFcn(debug, seed, bias, infname, maxSigmaErr, tag);  
   fFCN->SetErrorDef(1.0 / fFCN->get_n_dof());
   unsigned int n_parameters = fFCN->get_n_params();
   // Get the transformation of external to internal parameters

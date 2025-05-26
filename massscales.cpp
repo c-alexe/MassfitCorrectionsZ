@@ -177,6 +177,7 @@ int main(int argc, char* argv[]) {
   
   // Bias for A out
   double val_A_rnd = ran0->Uniform(-0.001, 0.001);
+  //double val_A_rnd = 0.0;
   for(unsigned int i=0; i<n_eta_bins; i++) {
     //double val = ran0->Uniform(-0.001, 0.001);
     // Random, eta dependent input curvature scale bias parameter A
@@ -397,8 +398,8 @@ int main(int argc, char* argv[]) {
       return true;
     }, {"idxs", "Muon_charge", "HLT_IsoMu24"} ));
 
-    // Define smear0 -> used as MC: pos and neg curvature k smeared according to the curvature biases A,e,M,c,d computed in previous iterations
-    // Define smear1 -> used as pseudodata: pos and neg curvature k smeared according to the input curvature biases A,e,M,c,d 
+    // Define smear0 -> used as MC: pos and neg gen curvature k smeared, then eventually corrected according to the curvature biases A,e,M,c,d computed in previous iterations
+    // Define smear1 -> used as pseudodata: pos and neg gen curvature k smeared according to the input curvature biases A,e,M,c,d 
     dlast = std::make_unique<RNode>(dlast->DefineSlot("Muon_ksmear", [&](unsigned int nslot, RVecUI idxs, RVecF Muon_pt, RVecF Muon_eta, RVecF Muon_phi,
                                     RVecF Muon_mass, RVecI Muon_charge, UInt_t nGenPart, RVecI GenPart_status, RVecI GenPart_statusFlags, RVecI GenPart_pdgId,
 									                  RVecF GenPart_pt, RVecF GenPart_eta, RVecF GenPart_phi, RVecF GenPart_mass) -> RVecF

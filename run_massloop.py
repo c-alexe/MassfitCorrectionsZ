@@ -90,6 +90,7 @@ if __name__ == '__main__':
         print('Running toy with seed '+str(iseed))
         loop_one_toy(seed=iseed,toy=itoy)
     # Sum the massfit histograms and merge massfit TTrees from all toys given the same Iter and write them in a single file  
+    '''
     if args.ntoys>1:
         for iter in range(0, args.niter+1):
             if args.forceIter>0 and iter!=args.forceIter:
@@ -98,5 +99,6 @@ if __name__ == '__main__':
             print(cmd_hadd)
             if not args.dryrun:
                 os.system(cmd_hadd)
+    '''
     end = time.time()
     print(args.ntoys, 'toys run in', (end - start)/60., 'min.')
