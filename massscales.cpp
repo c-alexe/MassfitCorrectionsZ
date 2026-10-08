@@ -369,16 +369,16 @@ int main(int argc, char* argv[]) {
     }, {"Generator_weight"} ));
 
     // Define MC smear0 weight -> even events are used as MC
-    dlast = std::make_unique<RNode>(dlast->Define("weight_smear0", [](ULong64_t rdfentry, float weight) -> float
+    dlast = std::make_unique<RNode>(dlast->Define("weight_smear0", [](ULong64_t event, float weight) -> float
     {
-      return std::copysign(1.0, weight)*(rdfentry%2==0);
-    }, {"rdfentry_", "Generator_weight"} ));
+      return std::copysign(1.0, weight)*(event%2==0);
+    }, {"event", "Generator_weight"} ));
 
     // Define MC smear1 weight -> odd events are used as pseudodata
-    dlast = std::make_unique<RNode>(dlast->Define("weight_smear1", [](ULong64_t rdfentry, float weight) -> float
+    dlast = std::make_unique<RNode>(dlast->Define("weight_smear1", [](ULong64_t event, float weight) -> float
     {
-      return std::copysign(1.0, weight)*(rdfentry%2==1);
-    }, {"rdfentry_", "Generator_weight"} ));
+      return std::copysign(1.0, weight)*(event%2==1);
+    }, {"event", "Generator_weight"} ));
     
     // Define the indices of individual muons passing selection criteria
     dlast = std::make_unique<RNode>(dlast->Define("idxs", [&](UInt_t nMuon, RVecB Muon_looseId, RVecF Muon_dxybs, RVecB Muon_isGlobal, RVecB Muon_highPurity,
