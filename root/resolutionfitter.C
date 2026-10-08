@@ -19,6 +19,8 @@ Double_t resmodel_withcorr(Double_t *x, Double_t *par)
       TF1::RejectPoint();
       return -999.;
    }
+   // resolution model with correlation (sigma/k)^2 = a^2 + (c/k)^2 + b^2/[1+(d*k)^2]
+   // par[0] = a, par[1] = c, par[2]=b, par[3]=d, x is pT
    return sqrt(par[0]*par[0]+par[1]*par[1]*x[0]*x[0]+par[2]*par[2]/(1+par[3]*par[3]/(x[0]*x[0])));
 }
 
@@ -28,13 +30,15 @@ Double_t resmodel(Double_t *x, Double_t *par)
       TF1::RejectPoint();
       return -999.;
    }
-   return sqrt(par[0]*par[0]+par[1]*par[1]*x[0]*x[0]); // par[0] = a, par[1] = c, x is pT
+   // resolution model (sigma/k)^2 = a^2 + (c/k)^2
+   // par[0] = a, par[1] = c, x is pT
+   return sqrt(par[0]*par[0]+par[1]*par[1]*x[0]*x[0]); 
 }
 
 void resolutionfitter() {
-	TFile* file=new TFile("nominal_resolution_histograms_2018.root");
+	TFile* file=new TFile("nominal_resolution_histos_2018_1st_test.root");
 	TH3D* histo=(TH3D*)file->Get("histo");
-	TFile* output=new TFile("nominal_resolution_coefficients_2018.root","RECREATE");
+	TFile* output=new TFile("nominal_resolution_coefficients_2018_1st_test.root","RECREATE");
 	output->cd();
 	TH1D* scalea = new TH1D("scalea","",24,-2.4,2.4);
 	TH1D* scalem = new TH1D("scalem","",24,-2.4,2.4);
