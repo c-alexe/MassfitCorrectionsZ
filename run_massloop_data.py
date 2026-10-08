@@ -13,9 +13,12 @@ import time
    
 parser = argparse.ArgumentParser(description='run')
 
+# Remember to change the year argument !
 parser.add_argument('--none', action='store_true'  , help = 'none')
 parser.add_argument('--dryrun', action='store_true'  , help = 'dry run')
-parser.add_argument('--tag',   default='2018' , help = 'type of data used')
+parser.add_argument('--tag',   default='my_test' , help = 'tag for output filenames')
+parser.add_argument('--year',  default='2016' , help = 'year of data used')
+parser.add_argument('--nomResFile',  default='./root/nominal_resolution_coefficients_year.root' , help = 'location and name of file with nominal resolution parameters')
 parser.add_argument('--niter', dest = 'niter'  , type = int,  default=1, help='number of iterations after the 0th')
 parser.add_argument('--forceIter', dest = 'forceIter'  , type = int,  default=-1, help='will only do a specific iteration and skip the rest')
 
@@ -25,6 +28,8 @@ def loop_one():
 
     assert args.forceIter <= args.niter 
     tag = args.tag
+    year = args.year
+    nomResFile = args.nomResFile
     cmd_histo_iter0 = './massscales_data --firstIter=-1 --lastIter=2 '+\
         ' --tag='+tag+' '+\
         ' --run=Iter0 '+\
@@ -33,7 +38,8 @@ def loop_one():
         ' --minNumMassBins=4 '+\
         ' --rebin=2 '+\
         ' --fitNorm --fitWidth '+\
-        '  --y2018 --scaleToData '
+        '  --y'+year+' '+\
+        '--scaleToData '
     if not args.forceIter>0:
         print(cmd_histo_iter0)
     if not (args.dryrun or args.forceIter>0):
@@ -48,6 +54,7 @@ def loop_one():
     cmd_resol_iter0 = './resolfit --ntoys=1 --bias=-1 '+\
         ' --tag='+tag+' '+\
         ' --run=Iter0 '+\
+        ' --nomResFile='+nomResFile+' '+\
         ' --maxSigmaErr=0.1 '
     if not args.forceIter>0:
         print(cmd_resol_iter0)

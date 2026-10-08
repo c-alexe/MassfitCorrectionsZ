@@ -186,6 +186,9 @@ public:
       n_data_ = n_unmasked_bins;
 	
       // Read from massscales.cpp the input curvature scale bias parameters AeM used to generate the toy, corrected for prevfit (OR 0 in massscales_data.cpp)
+      // The corrected nom histos are not used to generate pseudo-data differently, they serve for the computation of pulls in massfit (since we correct the MC at
+      // every iteration in massscales, it's roughly equivalent to fitting to a new nominal bias (increasingly small) each time. We use this bias to compute the 
+      // pulls wrt to the AeM parameters fitted at the current iteration
       TH1D* h_A_vals = (TH1D*)fin->Get("h_A_vals_nom");
       TH1D* h_e_vals = (TH1D*)fin->Get("h_e_vals_nom");
       TH1D* h_M_vals = (TH1D*)fin->Get("h_M_vals_nom");

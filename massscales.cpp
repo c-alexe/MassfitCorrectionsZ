@@ -45,7 +45,9 @@ using ROOT::RDF::RNode;
 
 using namespace boost::program_options;
 
-constexpr double lumiMC = 3.33369e+08/2001.9e+03; // fb^-1 
+// Equivalent integrated lumi of MC in fb^-1 = number of weighted events / xsec, with cross sections in fb at sqrt(s)=13Tev = 2001.9e+03
+// Use lumi_MC_calculator.cpp to compute it
+constexpr double lumiMC = 166.526;
   
 int main(int argc, char* argv[]) {
 
@@ -61,7 +63,7 @@ int main(int argc, char* argv[]) {
 	    ("help,h", "Help screen")
 	    ("minNumEvents",       value<int>()->default_value(100), "min number of events for a histogram to be accepted")
 	    ("minNumEventsPerBin", value<int>()->default_value(10), "min number of events for a bin of a histogram to be accepted")
-	    ("lumi",               value<float>()->default_value(0.), "luminosity in data in fb^1")
+	    ("lumi",               value<float>()->default_value(16.811), "luminosity in 2016 data in fb^1")
 	    ("tag",                value<std::string>()->default_value("closure"), "run type, type of toy used")
 	    ("run",                value<std::string>()->default_value("closure"), "number of iteration")
 	    ("skipUnsmearedReco",  bool_switch()->default_value(true), "do not fill histograms of mass or jacobian weights per event for reco without smearing")
@@ -241,7 +243,7 @@ int main(int argc, char* argv[]) {
   // Work out the biased resolution to smear MC curvature to get pseudodata
   TH1D* histobudget = 0;
   TH1D* histohitres = 0;
-  TFile* faux = TFile::Open("root/coefficients2016ptfrom20forscaleptfrom20to70forres.root", "READ");
+  TFile* faux = TFile::Open("root/nominal_resolution_coefficients_2016_1st_test.root", "READ");
   if(faux!=0) {
     histobudget = (TH1D*)faux->Get("histobudget");
     histohitres = (TH1D*)faux->Get("histohitres");
@@ -284,6 +286,8 @@ int main(int argc, char* argv[]) {
 	      e_vals_fit(i) = -h_e_vals_prevfit_in->GetBinContent(i+1);
 	      M_vals_fit(i) = -h_M_vals_prevfit_in->GetBinContent(i+1);
 	      // Update nom histos: subtract from the input curvature scale bias parameters A/e/M the sum of the curvature scale biases from all the previous iterations
+        // The updated nom histos are not used to generate pseudo-data differently, they serve for the computation of pulls in massfit (since we correct the MC at
+        // every iteration, it's roughly equivalent to fitting to a new nominal bias (increasingly small) each time
 	      h_A_vals_nom->SetBinContent(i+1, h_A_vals_nom->GetBinContent(i+1) - A_vals_fit(i) );
 	      h_e_vals_nom->SetBinContent(i+1, h_e_vals_nom->GetBinContent(i+1) - e_vals_fit(i) );
 	      h_M_vals_nom->SetBinContent(i+1, h_M_vals_nom->GetBinContent(i+1) - M_vals_fit(i) );
@@ -340,12 +344,12 @@ int main(int argc, char* argv[]) {
 
     // Define dataframe from the MC files
     ROOT::RDataFrame d( "Events",
-			{//"/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_040854/0000/NanoV9MCPostVFP_1.root",
-			  "/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_040854/0000/NanoV9MCPostVFP_*.root",
-			  "/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0000/NanoV9MCPostVFP_*.root",
-			  "/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0001/NanoV9MCPostVFP_*.root",
-			  "/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0002/NanoV9MCPostVFP_*.root"
-			} );
+			{
+			"/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_040854/0000/Nano*.root",
+			"/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0000/Nano*.root",
+			"/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0001/Nano*.root",
+			"/scratch/wmass/y2016/DYJetsToMuMu_H2ErratumFix_PDFExt_TuneCP5_13TeV-powhegMiNNLO-pythia8-photos/NanoV9MCPostVFP_TrackFitV722_NanoProdv6/240509_041233/0002/Nano*.root"
+	    } );
 
     // Define vector of different TRandom variables to be used by different threads
     unsigned int nslots = d.GetNSlots();

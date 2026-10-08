@@ -5,7 +5,8 @@
 // Panels 2-4 -> sum of fitted A, e or M parameters at different iterations for the same toy or data
 // -------------------------------------------------------------------------------------------------------------------
 
-void merge_massloop(TString tag = "SmearRealistic_toy0", TString name = "massloop_iter7", bool savePng=true, bool isData=false) {
+//merge_massloop()
+void toys_plotters(TString tag = "4th_toy_test_toy0", TString name = "massloop_in_iter0", bool savePDF=true, bool isData=false) {
 // run IterX means the sum of corrections derived in Iters 0 to (X-1) were applied
 
   TString plotname = name + TString("_") + tag;
@@ -321,18 +322,24 @@ void merge_massloop(TString tag = "SmearRealistic_toy0", TString name = "massloo
     //  hp_fit0->SetMinimum( - (hp_fit0->GetMaximum()+hp_fit0->GetBinError(1))*1.1 );
     //}
 
-    if(p==0 && savePng) { // A    
+    if(p==0 && savePDF) { // A    
       hp_fit0->GetYaxis()->SetMaxDigits(2);
       hp_fit0->SetMaximum( +0.005 );
-      hp_fit0->SetMinimum( -0.001 );      
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMaximum( +0.002 );
+      hp_fit0->SetMinimum( -0.001 );
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMinimum( -0.002 );      
     }
-    if(p==1 && savePng) { // e
+    if(p==1 && savePDF) { // e
       hp_fit0->SetMaximum( +0.3 );
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMaximum( +0.0025 );
       hp_fit0->SetMinimum( -0.2 );
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMinimum( -0.0025 );
     }
-    if(p==2 && savePng) { // M
+    if(p==2 && savePDF) { // M
       hp_fit0->SetMaximum( +0.0001 );
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMaximum( +0.0025 );
       hp_fit0->SetMinimum( -0.0001 );
+      if(string(name.Data()).find("in")!=string::npos) hp_fit0->SetMinimum( -0.0025 );
     }          
     hp_fit0->Draw("HISTPE");
     hp_nom->Draw("HISTSAME");
@@ -385,7 +392,7 @@ void merge_massloop(TString tag = "SmearRealistic_toy0", TString name = "massloo
 
   c->Update();
   c->Draw();
-  if(savePng) c->SaveAs(plotname+".pdf");
+  if(savePDF) c->SaveAs(plotname+".pdf");
   c->SaveAs(plotname+".root");
   
   fIter0->Close();
@@ -405,6 +412,8 @@ void merge_massloop(TString tag = "SmearRealistic_toy0", TString name = "massloo
   fout->Close();
 }
 
+/*
+
 // -------------------------------------------------------------------------------------
 // Merge TTrees produced by merge_massloop() for different toys, for the same iteration
 // -------------------------------------------------------------------------------------
@@ -423,13 +432,14 @@ void hadd_massloop_toys(TString name = "massloop") {
     //gSystem->Exec( Form("hadd -f merge_massloop_SmearRealistic_merged_%s_%s.root merge_massloop_SmearRealistic_toy*_%s_%s.root ; rm merge_massloop_SmearRealistic_toy*_%s_%s.root", name.Data(), iters[it].Data(), name.Data(), iters[it].Data(), name.Data(), iters[it].Data() ));
   }
 }
+*/
 
 // --------------------------------------------------------------------------------------------
 // For each scale bias parameter A,e,M, produce a histogram with either the mean or RMS of the
 // pull distribution of the fitted parameters from many toys in a given eta bin 
 // with results for different iterations superimposed
 // --------------------------------------------------------------------------------------------
-void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "massloop", bool savePng=true, bool plotMean=true) {
+void pulls_merged_toys(TString tag = "1st_multiple_test", TString name = "merged_in_pulls", bool savePDF=true, bool plotMean=true) {
   
   // Name of the output plot
   TString plotname = name + TString("_") + tag + TString(plotMean ? "_mean" : "_sigma");
@@ -451,12 +461,15 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
   leg1->SetFillColor(10);
   leg1->SetHeader("");
 
-  // Input files from hadd_massloop_toys() from many toys, with input and fitted parameters merged for a given iteration by merge_massloop()
-  TFile* fIter0 = TFile::Open("merge_massloop_"+tag+"_"+name+"_iter0.root", "READ");
-  TFile* fIter1 = TFile::Open("merge_massloop_"+tag+"_"+name+"_iter1.root", "READ");
-  TFile* fIter2 = TFile::Open("merge_massloop_"+tag+"_"+name+"_iter2.root", "READ");
-  TFile* fIter3 = TFile::Open("merge_massloop_"+tag+"_"+name+"_iter3.root", "READ");
-  TFile* fIter4 = TFile::Open("merge_massloop_"+tag+"_"+name+"_iter4.root", "READ");
+  // Input files with input and fitted parameters merged for a given iteration by hadd command in run_massloop()
+  TFile* fIter0 = TFile::Open("massfit_"+tag+"_merged_Iter0.root", "READ");
+  TFile* fIter1 = TFile::Open("massfit_"+tag+"_merged_Iter1.root", "READ");
+  TFile* fIter2 = TFile::Open("massfit_"+tag+"_merged_Iter2.root", "READ");
+  TFile* fIter3 = TFile::Open("massfit_"+tag+"_merged_Iter3.root", "READ");
+  TFile* fIter4 = TFile::Open("massfit_"+tag+"_merged_Iter4.root", "READ");
+  TFile* fIter5 = TFile::Open("massfit_"+tag+"_merged_Iter5.root", "READ");
+  TFile* fIter6 = TFile::Open("massfit_"+tag+"_merged_Iter6.root", "READ");
+  TFile* fIter7 = TFile::Open("massfit_"+tag+"_merged_Iter7.root", "READ");
 
   vector<TString> params = {"A", "e", "M"};
   
@@ -471,7 +484,7 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
     // Histograms to contain either the mean or RMS of the pull distribution of the fitted bias parameters from many toys in a given eta bin, at a given iteration
     h_pIter0 = new TH1D(Form("h_%s_Iter0", params[p].Data()), "", nparams, 0, nparams);   
     h_pIter1 = new TH1D(Form("h_%s_Iter1", params[p].Data()), "", nparams, 0, nparams);
-    h_pIter2 = new TH1D(Form("h_%s_Iter2", params[p].Data()), "", nparams, 0, nparams);   
+    if(fIter2!=0) h_pIter2 = new TH1D(Form("h_%s_Iter2", params[p].Data()), "", nparams, 0, nparams);   
     if(fIter3!=0) h_pIter3 = new TH1D(Form("h_%s_Iter3", params[p].Data()), "", nparams, 0, nparams);
     if(fIter4!=0) h_pIter4 = new TH1D(Form("h_%s_Iter4", params[p].Data()), "", nparams, 0, nparams);
 
@@ -480,7 +493,7 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
       // Set the histogram X-axis labels with the parameter name per eta e.g. A1, A2, A3...
       h_pIter0->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
       h_pIter1->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
-      h_pIter2->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
+      if(fIter2!=0) h_pIter2->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
       if(fIter3!=0)	h_pIter3->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
       if(fIter4!=0) h_pIter4->GetXaxis()->SetBinLabel(ip+1, h_template->GetXaxis()->GetBinLabel(ip+1));
     }
@@ -490,7 +503,8 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
     // The error is the error on the fitted parameter from the most recently added iteration
     TTree* t0 = (TTree*) fIter0->Get("tree");
     TTree* t1 = (TTree*) fIter1->Get("tree");
-    TTree* t2 = (TTree*) fIter2->Get("tree");
+    TTree* t2 = 0;
+    if(fIter2!=0) t2 = (TTree*) fIter2->Get("tree");
     TTree* t3 = 0;
     if(fIter3!=0) t3 = (TTree*) fIter3->Get("tree");
     TTree* t4 = 0;
@@ -548,18 +562,20 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
       h_pIter1->SetBinError(ip+1, plotMean ? mean_err : rms_err);
       hpulls->Reset();
 
-      t2->Draw(formula.Data(), "", "");
-      gf->SetParameter(0, 100.);
-      gf->SetParameter(1, 0.);
-      gf->SetParameter(2, 1.0 );      
-      hpulls->Fit("gf", "QR", "", -3, 3);
-      mean = gf->GetParameter(1);
-      mean_err = gf->GetParError(1);
-      rms = TMath::Abs(gf->GetParameter(2));
-      rms_err = gf->GetParError(2);
-      h_pIter2->SetBinContent(ip+1, plotMean ? mean : rms);
-      h_pIter2->SetBinError(ip+1, plotMean ? mean_err : rms_err);
-      hpulls->Reset();
+      if(fIter2!=0) {
+        t2->Draw(formula.Data(), "", "");
+        gf->SetParameter(0, 100.);
+        gf->SetParameter(1, 0.);
+        gf->SetParameter(2, 1.0 );      
+        hpulls->Fit("gf", "QR", "", -3, 3);
+        mean = gf->GetParameter(1);
+        mean_err = gf->GetParError(1);
+        rms = TMath::Abs(gf->GetParameter(2));
+        rms_err = gf->GetParError(2);
+        h_pIter2->SetBinContent(ip+1, plotMean ? mean : rms);
+        h_pIter2->SetBinError(ip+1, plotMean ? mean_err : rms_err);
+        hpulls->Reset();
+      }
 
       if(fIter3!=0) {
 	      t3->Draw(formula.Data(), "", "");
@@ -605,10 +621,12 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
     h_pIter2->SetMarkerStyle(kFullCircle);
     h_pIter0->SetMarkerColor(kBlue);
     h_pIter1->SetMarkerColor(kGreen);
-    h_pIter2->SetMarkerColor(kRed);
-    h_pIter0->SetMarkerSize(1.3);
-    h_pIter1->SetMarkerSize(1.3);
-    h_pIter2->SetMarkerSize(1.3);
+    if(fIter2!=0) {
+      h_pIter2->SetMarkerColor(kRed);
+      h_pIter0->SetMarkerSize(1.3);
+      h_pIter1->SetMarkerSize(1.3);
+      h_pIter2->SetMarkerSize(1.3);
+    }
     if(fIter3!=0) {
       h_pIter3->SetLineColor(kMagenta);
       h_pIter3->SetMarkerStyle(kFullCircle);
@@ -633,14 +651,14 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
     h_pIter0->SetMaximum(plotMean ? +2.0 : 3.0);
     h_pIter0->Draw("E");
     h_pIter1->Draw("ESAME");
-    h_pIter2->Draw("ESAME");
+    if(fIter2!=0) h_pIter2->Draw("ESAME");
     if(fIter3!=0) h_pIter3->Draw("ESAME");
     if(fIter4!=0) h_pIter4->Draw("ESAME");
 
     if(p==0){
       leg1->AddEntry(h_pIter0, "Iter 0", "PL");
       leg1->AddEntry(h_pIter1, "Iter 1", "PL");
-      leg1->AddEntry(h_pIter2, "Iter 2", "PL");
+      if(fIter2!=0) leg1->AddEntry(h_pIter2, "Iter 2", "PL");
       if(fIter3!=0) leg1->AddEntry(h_pIter3, "Iter 3", "PL");
       if(fIter4!=0) leg1->AddEntry(h_pIter4, "Iter 4", "PL");
     }
@@ -657,17 +675,18 @@ void pulls_merged_toys(TString tag = "SmearRealistic_merged", TString name = "ma
     
   c->Update();
   c->Draw();
-  if(savePng) c->SaveAs(plotname+".png");
+  if(savePDF) c->SaveAs(plotname+".pdf");
 
   fIter0->Close();
   fIter1->Close();
-  fIter2->Close();
+  if(fIter2!=0) fIter2->Close();
   if(fIter3!=0) fIter3->Close();
   if(fIter4!=0) fIter4->Close();
   delete c;
 
 }
 
+/*
 // -------------------------------------------------------------------------------------------------
 // Plot data to corrected MC mass ratio after a given iteration, with eta, pT cuts for the muons
 // -------------------------------------------------------------------------------------------------
@@ -749,3 +768,4 @@ void ratio_plotter_data( TString tag = "PostVFP", TString run = "Iter0", TString
   c->SaveAs(plotname);
   
 }
+*/

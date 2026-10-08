@@ -18,6 +18,7 @@ parser.add_argument('--none', action='store_true'  , help = 'none')
 parser.add_argument('--dryrun', action='store_true'  , help = 'dry run')
 parser.add_argument('--ntoys', dest = 'ntoys'  , type = int,  default=1, help='number of toys')
 parser.add_argument('--tag',   default='SmearRealistic' , help = 'type of toy used')
+parser.add_argument('--nomResFile',  default='./root/nominal_resolution_coefficients_year.root' , help = 'location and name of file with nominal resolution parameters')
 parser.add_argument('--niter', dest = 'niter'  , type = int,  default=1, help='number of iterations after the 0th')
 parser.add_argument('--forceIter', dest = 'forceIter'  , type = int,  default=-1, help='will only do a specific iteration and skip the rest')
 
@@ -26,9 +27,11 @@ args = parser.parse_args()
 def loop_one_toy(seed, toy):    
 
     tag = args.tag+'_toy'+str(toy)
-    cmd_histo_iter0 = './massscales --lumi=-1 --firstIter=0 --lastIter=2 '+\
+    nomResFile = args.nomResFile
+    cmd_histo_iter0 = './massscales --firstIter=0 --lastIter=2 '+\
         ' --tag='+tag+' '+\
         ' --run=Iter0 '+\
+        ' --useMCasData '+\
         ' --nRMSforGausFit=-1.0 '+\
         ' --biasResolution=0.1 ' +\
         ' --minNumEvents=100 --minNumEventsPerBin=30 '+\
@@ -36,6 +39,7 @@ def loop_one_toy(seed, toy):
         ' --rebin=2 '+\
         ' --fitNorm --fitWidth '+\
         ' --seed='+str(seed)
+        # --lumi=-1
     if not args.forceIter>0:
         print(cmd_histo_iter0)
     if not (args.dryrun or args.forceIter>0):
@@ -50,6 +54,7 @@ def loop_one_toy(seed, toy):
     cmd_resol_iter0 = './resolfit --ntoys=1 --bias=-1 '+\
         ' --tag='+tag+' '+\
         ' --run=Iter0 '+\
+        ' --nomResFile='+nomResFile+' '+\
         ' --maxSigmaErr=0.1 '
     if not args.forceIter>0:
         print(cmd_resol_iter0)
@@ -89,8 +94,8 @@ if __name__ == '__main__':
         iseed += itoy*3843
         print('Running toy with seed '+str(iseed))
         loop_one_toy(seed=iseed,toy=itoy)
-    # Sum the massfit histograms and merge massfit TTrees from all toys given the same Iter and write them in a single file  
-    '''
+    # Merge massfit TTrees from all toys given the same Iter and write them in a single file. The -f flag force overwrites the output file. It also merges the histograms, not that it's useful
+    
     if args.ntoys>1:
         for iter in range(0, args.niter+1):
             if args.forceIter>0 and iter!=args.forceIter:
@@ -99,6 +104,6 @@ if __name__ == '__main__':
             print(cmd_hadd)
             if not args.dryrun:
                 os.system(cmd_hadd)
-    '''
+    
     end = time.time()
     print(args.ntoys, 'toys run in', (end - start)/60., 'min.')
